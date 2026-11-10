@@ -1,0 +1,1 @@
+Source releases read by make_bundled.py (PyPI sdists, fetched 2026-11-09): pypi.org/project/scipy/1.15.3, numpy/2.2.5, pillow/12.1.1. MinGW-w64-runtime-14.0.0.txt = mingw-w64 tag v14.0.0, COPYING.MinGW-w64-runtime/COPYING.MinGW-w64-runtime.txt.

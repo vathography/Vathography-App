@@ -1,0 +1,24 @@
+Vathography App - model files
+Published by Vathography (Karim Joseph Nassar), 2026. https://vathography.com
+
+This repository contains three files that are byte-identical to files of Comfy-Org/marigold-v2-0 (Apache License
+2.0), https://huggingface.co/Comfy-Org/marigold-v2-0, revision c304e4370a1bc677a98c906c3683ace49a6bdadd (no change
+made to them):
+  loras/marigold_v2_depth_log_stage2.safetensors       -> marigold_v2_depth_log_stage2.safetensors
+  vae/marigold_v2_depth_log_stage2_vae.safetensors     -> marigold_v2_depth_log_stage2_vae.safetensors
+  embeddings/marigold_v2_depth_conditioning.safetensors -> marigold_v2_depth_conditioning.safetensors
+(the same bytes; only the folder is different). A copy of the license is in LICENSE.
+
+Those files are derived from the following works, each licensed under the Apache License, Version 2.0:
+
+1. Marigold V2 — huawei-bayerlab, https://huggingface.co/huawei-bayerlab/marigold-v2-0
+   Authors: Igor Pavlovic, Thiemo Wandel, Anton Obukhov, Luca Bartolomei, Andrey Davydov, Fabio Tosi, Matteo Poggi,
+   Sabine Süsstrunk, Dengxin Dai (EPFL, HUAWEI Bayer Lab, University of Bologna).
+   "Marigold V2: Revisiting Diffusion Transformers for Monocular Depth Estimation", ACM Transactions on Graphics 45(6),
+   2026, https://doi.org/10.1145/3842528 (preprint: https://arxiv.org/abs/2609.08084)
+
+2. Qwen-Image-Edit-2509 — the Qwen team, https://huggingface.co/Qwen/Qwen-Image-Edit-2509
+   "Qwen-Image Technical Report", https://arxiv.org/abs/2508.02324
+   (the VAE encoder inside marigold_v2_depth_log_stage2_vae.safetensors)
+
+Not affiliated with, or endorsed by, the authors or institutions above.

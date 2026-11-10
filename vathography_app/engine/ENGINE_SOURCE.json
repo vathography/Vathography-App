@@ -1,0 +1,12 @@
+{
+ "source": "ComfyUI-Marigold-V2-Tiled-Depth-Vathography 1.3.0, Comfy Registry node.zip sha256 0140f911c0ec433fed30f6eb59f909c882c606799c4a8018cc00707a361944be",
+ "rule": "copied byte for byte from the node, then a two-line licence header added at the top of each .py file; the hashes are of the files without that header (a ported fix = a new copy, re-checked against the node)",
+ "files": {
+  "tiled_core.py": "36a8c5941c01068b00d6e3f0aa4593da2ab0317e8010ce9dedb35cf634a6f10d",
+  "imageops.py": "5fb266d2b25a76b51a51427b1a7ee3ae47aef84a6737b80f5f0531e18ab3e036",
+  "relief.py": "e016fe4761b0986d6301ee793002e17117560cbab5bcc83810db20d25174915d",
+  "relief_colour.py": "7b68aed5d4eee168bfd0cc6ba089409184edc00ae5ca94511d2b4fbc442cea87",
+  "assets/decoy_hand_x2.5.npz": "f44652e167afd81827ca5b89595bd2c159878f4520283b3b743e55b0283e390f",
+  "assets/decoy_hand_x3.5.npz": "8e060b796949448069c5258e5917148abe4d3fa3127ab9784c3247bb9233048e"
+ }
+}

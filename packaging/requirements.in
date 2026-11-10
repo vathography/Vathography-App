@@ -1,0 +1,12 @@
+# The app's direct imports, pinned to the dev env the gates ran in (2026-10-30).
+# Their own dependencies are pinned by constraints.txt (= the dev env's freeze).
+torch==2.10.0+cu128
+diffusers==0.38.0
+accelerate==1.13.0
+safetensors==0.8.0
+numpy==2.2.5
+scipy==1.15.3
+kornia==0.8.1
+av==17.1.0
+opencv-python-headless==4.13.0.92
+tkinterdnd2==0.7.0

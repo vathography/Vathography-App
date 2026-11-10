@@ -1,0 +1,110 @@
+{
+ "manifest_version": 1,
+ "app": "Vathography App",
+ "built": "2026-10-29",
+ "models": {
+  "depth": [
+   "backbone_nf4",
+   "lora:depth",
+   "vae:depth",
+   "conditioning"
+  ],
+  "see-through": [
+   "backbone_nf4",
+   "lora:see-through",
+   "vae:see-through",
+   "conditioning"
+  ]
+ },
+ "total_download_bytes": 15500042728,
+ "files": [
+  {
+   "role": "backbone_nf4",
+   "model": "both",
+   "repo": "Vathography/marigold-v2-see-through-comfyui",
+   "revision": "ef7d12b25ef183cd810d36928e2ab0725ae031d2",
+   "path": "diffusion_models/marigold_v2_see_through_qwen_image_edit_2509_nf4.safetensors",
+   "size": 11582478004,
+   "sha256": "3489128612be229f59f94240d22a2a316bb7997b1d4265de5531476d0670491f"
+  },
+  {
+   "role": "lora",
+   "model": "see-through",
+   "repo": "Vathography/marigold-v2-see-through-comfyui",
+   "revision": "ef7d12b25ef183cd810d36928e2ab0725ae031d2",
+   "path": "loras/marigold_v2_depth_see_through.safetensors",
+   "size": 1703764632,
+   "sha256": "8f89a956b027126f801e9811bdfacce7ae2d434914177b1a4e62dca95bd8e227"
+  },
+  {
+   "role": "vae",
+   "model": "see-through",
+   "repo": "Vathography/marigold-v2-see-through-comfyui",
+   "revision": "ef7d12b25ef183cd810d36928e2ab0725ae031d2",
+   "path": "vae/marigold_v2_depth_see_through_vae.safetensors",
+   "size": 253806278,
+   "sha256": "3dd6f7c282b4d8857c105e209ca860787f46dccbf8d864453d592a7d73f4c9f8"
+  },
+  {
+   "role": "lora",
+   "model": "depth",
+   "repo": "Vathography/vathography-app-models",
+   "revision": "0e132343bb507f4c39604cdd197c8aa3f54b615c",
+   "path": "marigold_v2_depth_log_stage2.safetensors",
+   "size": 1703764632,
+   "sha256": "ec1f5649eef5ddb487b4de2222f6b62837f094c02d652843bd4fceb481037ca0",
+   "note": "built from the original Apache-2.0 sources (v2_build.py); byte-identical to the Comfy-Org file"
+  },
+  {
+   "role": "vae",
+   "model": "depth",
+   "repo": "Vathography/vathography-app-models",
+   "revision": "0e132343bb507f4c39604cdd197c8aa3f54b615c",
+   "path": "marigold_v2_depth_log_stage2_vae.safetensors",
+   "size": 253806278,
+   "sha256": "0c1a95f7410678a93b59ba42b3a069f50b54ff9f6e35525699eb8fcd63ce332c",
+   "note": "built from the original Apache-2.0 sources (v2_build.py); byte-identical to the Comfy-Org file"
+  },
+  {
+   "role": "conditioning",
+   "model": "both",
+   "repo": "Vathography/vathography-app-models",
+   "revision": "0e132343bb507f4c39604cdd197c8aa3f54b615c",
+   "path": "marigold_v2_depth_conditioning.safetensors",
+   "size": 2422904,
+   "sha256": "9f5c00a2df993136c541cdbc37bcfb81ab1ba81adaec25bfb9cbfff81edd7c9c",
+   "note": "built from the original Apache-2.0 sources (v2_build.py); byte-identical to the Comfy-Org file"
+  }
+ ],
+ "rule": "every file is checked against its sha256 after download; a local models folder is accepted only when every hash matches",
+ "third_party": [
+  {
+   "name": "PyTorch",
+   "package": "torch",
+   "module": "torch",
+   "version": "2.10.0+cu128",
+   "publisher": "pytorch.org",
+   "licence": "BSD-3-Clause; the libraries inside it (NVIDIA CUDA + cuDNN, Intel OpenMP and others) under their own licences",
+   "url": "https://download.pytorch.org/whl/cu128/torch-2.10.0%2Bcu128-cp310-cp310-win_amd64.whl",
+   "file": "torch-2.10.0+cu128-cp310-cp310-win_amd64.whl",
+   "size": 2867370185,
+   "unpacked_size": 4259345625,
+   "sha256": "14d2831b9292c3a9b0d80116451315a08ffe8db745d403d06000bc47165b1f9e",
+   "folder": "torch-2.10.0+cu128"
+  },
+  {
+   "name": "OpenCV",
+   "package": "opencv-python-headless",
+   "module": "cv2",
+   "version": "4.13.0.92",
+   "publisher": "PyPI",
+   "licence": "Apache-2.0; the libraries inside it (Intel IPP and others) under their own licences",
+   "url": "https://files.pythonhosted.org/packages/4a/90/b338326131ccb2aaa3c2c85d00f41822c0050139a4bfe723cfd95455bd2d/opencv_python_headless-4.13.0.92-cp37-abi3-win_amd64.whl",
+   "file": "opencv_python_headless-4.13.0.92-cp37-abi3-win_amd64.whl",
+   "size": 40070414,
+   "unpacked_size": 85167638,
+   "sha256": "77a82fe35ddcec0f62c15f2ba8a12ecc2ed4207c17b0902c7a3151ae29f37fb6",
+   "folder": "opencv-4.13.0.92"
+  }
+ ]
+}
