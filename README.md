@@ -1,3 +1,5 @@
+<img width="1280" height="640" alt="vathography_App_Github_KarimJosephNassar" src="https://github.com/user-attachments/assets/be8f1877-a04c-4f4d-a5bb-776afd850262" />
+
 # Vathography App
 
 High-resolution depth maps estimated from high-resolution photographs, in a standalone app. An easy-to-use alternative to the Vathography ComfyUI nodes, for artists who do not use ComfyUI. The app is free. 
