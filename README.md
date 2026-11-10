@@ -1,6 +1,7 @@
 # Vathography App
 
-Depth maps from photographs, without ComfyUI. A Windows app for NVIDIA graphics cards (RTX 30-series or newer).
+High-resolution depth maps estimated from high-resolution photographs, in a standalone app. An easy-to-use alternative to the Vathography ComfyUI nodes, for artists who do not use ComfyUI. The app is free. 
+Windows app for NVIDIA graphics cards (RTX 30-series or newer).
 
 This repository holds the complete source code of Vathography App, including the scripts that build the download. Each release has a tag: `app-0.1.7` is the source of version 0.1.7.
 
