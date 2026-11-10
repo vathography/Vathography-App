@@ -1,0 +1,11 @@
+_devenv/
+__pycache__/
+*.pyc
+results/
+*.tmp
+_build/
+settings.json
+last_run.log
+models/
+_s5_test/
+_github_upload/
