@@ -285,6 +285,8 @@ class App:
                                     ("Base depth map", "Accentuated Relief"))
         self._depth_options(self.tab_depth)
         self._relief_options(self.tab_relief)
+        self._tab_now = self.tab_depth                  # one divider position for both pages (user 2026-11-11)
+        nb.bind("<<NotebookTabChanged>>", self._tab_changed, add="+")
 
         # the line under the list: errors and warnings only (progress is written on the photo's own row, never here,
         # so "stopped unexpectedly" always shows)
@@ -311,10 +313,14 @@ class App:
         nb.add(f, text=title)
         f.kind = kind
         f.columnconfigure(0, weight=1)
-        f.columnconfigure(1, weight=1)
         f.rowconfigure(0, weight=1)
-        left = ttk.Frame(f)
-        left.grid(row=0, column=0, sticky="nsew")
+        # list | preview with a draggable divider between them (user 2026-11-11: one handle on the EDGE resizes both;
+        # the list's own column handle is switched off below)
+        paned = ttk.PanedWindow(f, orient="horizontal")
+        paned.grid(row=0, column=0, sticky="nsew")
+        f.paned = paned
+        left = ttk.Frame(paned, padding=(0, 0, 5, 0))
+        paned.add(left, weight=1)
         box = ttk.Frame(left)                           # the list + its scrollbar (shown only when rows overflow)
         box.pack(fill="both", expand=True)
         tree = ttk.Treeview(box, columns=("status", "remove"), height=8, selectmode="extended")
@@ -342,14 +348,25 @@ class App:
         f.outputs = {}                                  # item id -> [written files] (this session's runs)
         tree.bind("<<TreeviewSelect>>", lambda e, f=f: self._selected(f))
         tree.bind("<Button-1>", lambda e, f=f: self._click_remove(f, e))    # before the class binding (selection)
-        tree.bind("<Motion>", lambda e, f=f: tree.configure(
-            cursor="hand2" if self._remove_cell(f, e) else ""))
+        # a quick second click arrives as a double-click: same handler, so ✕ still removes and the column edge stays shut
+        tree.bind("<Double-Button-1>", lambda e, f=f: self._click_remove(f, e))
+        tree.bind("<Motion>", lambda e, f=f: self._tree_motion(f, e))
         tree.bind("<Leave>", lambda e: tree.configure(cursor=""))
         if TkinterDnD is not None:
             tree.drop_target_register(DND_FILES)
             tree.dnd_bind("<<Drop>>", lambda e, f=f: self.add(f, self.root.tk.splitlist(e.data)))
-        self._preview_pane(f, pv_titles).grid(row=0, column=1, sticky="nsew", padx=(10, 0))
+        right = ttk.Frame(paned, padding=(5, 0, 0, 0))
+        self._preview_pane(f, right, pv_titles).pack(fill="both", expand=True)
+        paned.add(right, weight=1)
+        # the divider is dragged by our own handlers: it stops where the buttons under the list touch (user 2026-11-11)
+        f.sash_drag = None
+        paned.bind("<ButtonPress-1>", lambda e, f=f: self._sash_press(f, e))
+        paned.bind("<B1-Motion>", lambda e, f=f: self._sash_motion(f, e))
+        paned.bind("<ButtonRelease-1>", lambda e, f=f: self._sash_release(f, e))
+        paned.bind("<Configure>", lambda e, f=f: self.root.after_idle(lambda: self._sash_set(f, paned.sashpos(0))),
+                   add="+")
         row = ttk.Frame(left)
+        f.btn_row = row
         row.pack(fill="x", pady=(6, 0))
         ttk.Button(row, text="Add files…", command=lambda: self.add(f, filedialog.askopenfilenames())).pack(side="left")
         ttk.Button(row, text="Add folder…", command=lambda: self.add(f, [filedialog.askdirectory()])).pack(side="left", padx=4)
@@ -363,8 +380,8 @@ class App:
         return f
 
     # -- preview: the selected row's input + its output once one exists (this run, or an earlier one on disk)
-    def _preview_pane(self, f, titles):
-        pv = ttk.Notebook(f, style="Preview.TNotebook")
+    def _preview_pane(self, f, parent, titles):
+        pv = ttk.Notebook(parent, style="Preview.TNotebook")
         f.pv, f.pv_shown, f.pv_imgs = pv, None, [None, None]
         f.pv_labels = []
         f.pv_files = [None, None]                       # the file each preview shows = the file a drag carries out
@@ -610,7 +627,71 @@ class App:
             return None
         return f.tree.identify_row(e.y) or None
 
+    # -- the divider between the list and the preview
+    def _sash_set(self, f, pos):
+        """Place the divider, never left of where the buttons under the list touch (they keep their size)."""
+        # and never so far right that the preview's two tab titles are cut: past that ttk hides the preview pane
+        # entirely and a wider window then goes to the list only (found 2026-11-11)
+        tabs = self._pv_tabs_width(f)
+        if tabs:
+            pos = min(int(pos), f.paned.winfo_width() - 6 - 5 - tabs)   # 6 = divider, 5 = preview side's padding
+        pos = max(f.btn_row.winfo_reqwidth() + 5, int(pos))   # + 5 = the list side's padding at the divider
+        if f.paned.sashpos(0) != pos:
+            f.paned.sashpos(0, pos)
+
+    def _pv_tabs_width(self, f=None):
+        """Room for the preview's tab titles = the WIDER of the two pages', so one divider position fits both
+        (Depth 188 px, Relief 256 px at 100 %; = where the last title ends as read off the drawn notebook)."""
+        if not hasattr(self, "tab_relief"):              # still building the pages
+            return None
+        if getattr(self, "_pv_tabs_w", None) is None:
+            st = ttk.Style(self.root)
+            fnt = tkfont.Font(self.root, font=st.lookup("Preview.TNotebook.Tab", "font") or "TkDefaultFont")
+            pad = st.lookup("Preview.TNotebook.Tab", "padding")
+            padx = self.root.winfo_pixels(str(pad[0])) if pad else 12
+            self._pv_tabs_w = max(sum(fnt.measure(t.pv.tab(i, "text")) + 2 * padx for i in range(t.pv.index("end"))) + 6
+                                  for t in (self.tab_depth, self.tab_relief))
+        return self._pv_tabs_w
+
+    def _sash_press(self, f, e):
+        if str(f.paned.identify(e.x, e.y)) == "":
+            return None
+        f.sash_drag = e.x - f.paned.sashpos(0)
+        return "break"
+
+    def _sash_motion(self, f, e):
+        if f.sash_drag is None:
+            return None
+        self._sash_set(f, e.x - f.sash_drag)
+        return "break"
+
+    def _sash_release(self, f, e):
+        if f.sash_drag is None:
+            return None
+        f.sash_drag = None
+        return "break"
+
+    def _tab_changed(self, e=None):
+        """The page shown takes the divider position of the page left (each page keeps its own pane otherwise)."""
+        new = self.nb.nametowidget(self.nb.select())
+        old, self._tab_now = self._tab_now, new
+        if old is new or not hasattr(new, "paned"):
+            return
+        pos = old.paned.sashpos(0)
+        self.root.update_idletasks()
+        self._sash_set(new, pos)
+
+    def _tree_motion(self, f, e):
+        # the column widths are the app's (_layout): no resize cursor on the heading's column edges (user 2026-11-11)
+        if f.tree.identify_region(e.x, e.y) == "separator":
+            f.tree.configure(cursor="")
+            return "break"
+        f.tree.configure(cursor="hand2" if self._remove_cell(f, e) else "")
+        return None
+
     def _click_remove(self, f, e):
+        if f.tree.identify_region(e.x, e.y) == "separator":
+            return "break"                              # no column drag: the divider beside the preview resizes
         iid = self._remove_cell(f, e)
         if not iid:
             return None
@@ -1307,6 +1388,7 @@ def apply_theme(root):
                  lightcolor=SURFACE, darkcolor=SURFACE,
                  rowheight=tkfont.Font(root, font=body).metrics("linespace") + 10)   # pixels: follows the scaling
     st.map("Treeview", background=[("selected", ACCENT_SOFT)], foreground=[("selected", TEXT)])
+    st.configure("Sash", sashthickness=6, gripcount=0, background=BG, bordercolor=BG, lightcolor=BG, darkcolor=BG)
     st.configure("Treeview.Heading", background=BG_ALT, foreground=TEXT_SOFT, bordercolor=LINE, lightcolor=BG_ALT,
                  darkcolor=BG_ALT, relief="flat", padding=(6, 4))
     st.map("Treeview.Heading", background=[("active", BG_ALT)])
