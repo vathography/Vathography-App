@@ -88,11 +88,12 @@ def photos(args, kind="depth"):
 def depth(ns):
     stage(0, "starting the depth engine")    # before the imports below (several silent seconds)
     import torch
-    from . import backend, models, outnames, photo_io, pipeline
+    from . import backend, device, models, outnames, photo_io, pipeline
     backend.log = log                       # the backend's own "[backend]" lines become JSON events too
+    dev = device.pick()
+    log(device.system_line(dev))            # in every run log: what a report needs (OS, GPU, memory, torch)
     if ns.cap:                              # test option: torch's allocator hard-capped (an 8 GB card ~ 6.5 GiB)
-        dev0 = torch.device("cuda:0")
-        torch.cuda.set_per_process_memory_fraction(ns.cap * 2 ** 30 / torch.cuda.get_device_properties(dev0).total_memory, dev0)
+        device.cap(dev, ns.cap)
         log(f"GPU memory capped at {ns.cap} GiB for torch")
     model = "see-through" if ns.see_through else "depth"
     stage(0, "checking the model files")
@@ -104,7 +105,7 @@ def depth(ns):
     paths = models.locate(ns.models, model, verify=ns.verify, progress=hashing)
     log(f"model {model}: " + " | ".join(f"{k} {os.path.basename(v)}" for k, v in paths.items()))
     m = backend.Model(paths["backbone"], paths["lora"], paths["vae"], paths["conditioning"], models.VAE_CONFIG_DIR,
-                      budget_gib=ns.budget, log_fn=log, stage=lambda name, d=None, t=None: stage(0, name, d, t), label=model)
+                      device=dev, budget_gib=ns.budget, log_fn=log, stage=lambda name, d=None, t=None: stage(0, name, d, t), label=model)
     assert m.recipe == model, (m.recipe, model)
     # writer kind per output: exr32 / exr16 / png16 / png8 (the window's list, 2026-10-31); png / exr / both = the
     # earlier names (16-bit PNG / 32-bit EXR / both), kept for the gates and old settings
@@ -114,17 +115,22 @@ def depth(ns):
     emit("model", model=model, recipe=m.recipe, group=m.group)
     todo = photos(ns.photos)
     failed = 0
+    peak = device.Peak(dev)
+
+    def staged(i, name, d=None, t=None):    # every progress event also samples the Mac's GPU memory (no peak counter)
+        peak.poll()
+        stage(i, name, d, t)
     for i, p in enumerate(todo, 1):
         emit("photo", i=i, n=len(todo), path=p)
         try:
             t0 = time.time()
-            torch.cuda.reset_peak_memory_stats()
+            peak.reset()
             stage(i, "reading the photo")
             bgr = photo_io.read_photo_bgr_u8(p)
             out, info = pipeline.run_pipeline(bgr, m.infer, pipeline.TILE, log=log,
-                                              progress=(lambda d, t, i=i: emit("step", i=i, done=d, total=t)) if JSON else None,
+                                              progress=(lambda d, t, i=i: (peak.poll(), emit("step", i=i, done=d, total=t))) if JSON else None,
                                               merge_device=m.dev, recipe=m.recipe,
-                                              stage=(lambda name, d=None, t=None, i=i: stage(i, name, d, t)) if JSON else None,
+                                              stage=(lambda name, d=None, t=None, i=i: staged(i, name, d, t)) if JSON else None,
                                               sky=not ns.no_sky_repair, sky_chunk=m.group, sky_limit=ns.sky_frames, sky_scaled=not ns.no_scaled_frames,
                                               warn=lambda msg, i=i, p=p: (emit("warning", i=i, msg=f"{os.path.basename(p)}: {msg}") if JSON else log(f"{os.path.basename(p)}: {msg}")))
             stem = os.path.splitext(os.path.basename(p))[0]
@@ -134,16 +140,14 @@ def depth(ns):
             stage(i, f"writing {stem}{suffix}_v{nxt:03d}.{kinds[-1][:3]}")
             # never over an existing file: <stem><suffix>_vNNN.<ext>, one number for the whole set
             files = outnames.write_versioned(d, f"{stem}{suffix}", [(k[:3], photo_io.encode_depth(out, k)) for k in kinds])
-            log(f"[{i}] {stem}: {info['mode']} | {time.time() - t0:.0f} s | GPU peak allocated "
-                f"{torch.cuda.max_memory_allocated() / 2 ** 30:.2f} / reserved {torch.cuda.max_memory_reserved() / 2 ** 30:.2f} GiB -> "
-                + " | ".join(files))
+            log(f"[{i}] {stem}: {info['mode']} | {time.time() - t0:.0f} s | {peak.line()} -> " + " | ".join(files))
             emit("written", i=i, files=files, s=round(time.time() - t0, 1))
         except Exception as e:
             if not JSON:
                 raise
             failed += 1
             emit("error", i=i, path=p, msg=f"{type(e).__name__}: {e}", trace=traceback.format_exc())
-        torch.cuda.empty_cache()
+        device.empty_cache(dev)
     emit("done", ok=len(todo) - failed, failed=failed)
     return 0
 
@@ -194,6 +198,10 @@ def main(argv=None):
     # before torch is imported. ⚠ torch on Windows does NOT support expandable segments (it warns and ignores the
     # setting) — kept for other platforms.
     os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+    from . import platform_io
+    if platform_io.IS_MAC:
+        # an operation Metal does not have runs on the CPU instead of stopping the photo (PyTorch logs each one)
+        os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
     argv = sys.argv[1:] if argv is None else list(argv)
     if argv[:1] == ["gui"]:                 # the window; files after `gui` are listed in the Depth tab
         from . import gui
@@ -230,6 +238,7 @@ def main(argv=None):
     global JSON
     JSON = ns.progress_json
     from . import third_party               # stdlib only: PyTorch + OpenCV present and loading, else one sentence
+    third_party.add_to_path()               # macOS: third_party's folders on sys.path (Windows: the package's .pth)
     miss = third_party.missing()
     if not miss:
         stage(0, "starting the depth engine")   # the load check imports torch: several silent seconds otherwise

@@ -15,6 +15,8 @@ from fractions import Fraction
 import av
 import numpy as np
 
+from .platform_io import safe_rename
+
 TAG_KEY, TAG_VALUE = "vathography", "raw-depth"
 EXR_MAGIC = b"\x76\x2f\x31\x01"
 # Scanlines stored in one chunk, by the value of the EXR compression attribute (none, RLE, ZIPS, ZIP, PIZ, PXR24,
@@ -269,12 +271,12 @@ def encode_depth(depth01, kind, tagged=True):
 
 def write_depth(path, depth01, kind, tagged=True):
     """One file at an exact name, never over an existing file (FileExistsError). Crash-safe: <path>.tmp, then
-    os.rename (Windows refuses an existing target). The app's outputs go through write_versioned instead."""
+    safe_rename (never replaces, on every OS). The app's outputs go through write_versioned instead."""
     tmp = path + ".tmp"
     with open(tmp, "wb") as f:
         f.write(encode_depth(depth01, kind, tagged))
     try:
-        os.rename(tmp, path)
+        safe_rename(tmp, path)
     except OSError:
         os.remove(tmp)
         raise

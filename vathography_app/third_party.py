@@ -19,9 +19,10 @@ import json
 import os
 import shutil
 import time
+import sys
 import zipfile
 
-from . import models
+from . import models, platform_io
 
 HOME = os.path.join(models.APP_HOME, "third_party")
 MARK = ".installed"
@@ -42,8 +43,20 @@ class Busy(Exception):
 
 
 def entries():
+    """The pins for this platform: `third_party` (Windows) or `third_party_macos` (Apple silicon)."""
     with open(models.MANIFEST, encoding="utf-8") as f:
-        return json.load(f).get("third_party", [])
+        return json.load(f).get("third_party_macos" if platform_io.IS_MAC else "third_party", [])
+
+
+def add_to_path(home=None):
+    """macOS: each installed folder on sys.path (Windows finds them through the .pth the package build writes;
+    a .pth cannot be written into a signed .app bundle). Windows: nothing."""
+    if platform_io.IS_WIN:
+        return
+    for e in entries():
+        p = folder(e, home)
+        if installed(e, home) and p not in sys.path:
+            sys.path.append(p)
 
 
 def folder(entry, home=None):
@@ -86,7 +99,9 @@ def _found_elsewhere(entry, home=None):
 def over_old_version():
     """The package was unzipped over a version that still carried PyTorch / OpenCV in its runtime (0.1.6 and earlier):
     those leftovers shadow third_party\\. -> True only in the package layout (<APP_HOME>\\runtime exists)."""
-    site = os.path.join(models.APP_HOME, "runtime", "Lib", "site-packages")
+    if not platform_io.IS_WIN:
+        return False
+    site = os.path.join(models.INSTALL_HOME, "runtime", "Lib", "site-packages")
     return os.path.isdir(site) and any(os.path.isdir(os.path.join(site, d)) for d in ("torch", "cv2"))
 
 
@@ -115,7 +130,7 @@ def load_check():
             __import__(mod)
         except Exception as ex:                   # noqa: BLE001 -- any load failure ends in one sentence
             hint = ""
-            if isinstance(ex, OSError) or "DLL" in str(ex):
+            if platform_io.IS_WIN and (isinstance(ex, OSError) or "DLL" in str(ex)):
                 hint = (" Windows could not load one of its libraries: installing the Microsoft Visual C++ "
                         "Redistributable (x64) usually fixes this.")
             return f"{name} is installed but does not load ({type(ex).__name__}: {ex}).{hint}"
@@ -123,20 +138,7 @@ def load_check():
 
 
 def _pid_alive(pid):
-    if pid == os.getpid():
-        return True
-    try:
-        import ctypes
-        k = ctypes.windll.kernel32
-        h = k.OpenProcess(0x1000, False, pid)     # PROCESS_QUERY_LIMITED_INFORMATION
-        if not h:
-            return False
-        code = ctypes.c_ulong()
-        ok = k.GetExitCodeProcess(h, ctypes.byref(code))
-        k.CloseHandle(h)
-        return bool(ok) and code.value == 259     # STILL_ACTIVE
-    except (AttributeError, OSError):
-        return True                               # cannot tell: refuse rather than install twice
+    return platform_io.pid_alive(pid)
 
 
 def _lock(home):

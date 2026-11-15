@@ -28,6 +28,7 @@ import cv2
 import numpy as np
 import torch
 
+from . import device
 from .engine import tiled_core as TC
 
 CORR_MAX, RMS_X, GAIN_MIN = 0.8, 3.8, 0.05           # the flag rule
@@ -243,7 +244,7 @@ def repair(S, G, plan, tp, rows, bgr, infer, merge_device="cpu", stage=None, log
     lum = bgr.astype(np.float32).mean(2) / 255
     log(f"[sky_repair] {len(every)} tile(s) flagged, canvas {W}x{H}, tile {tile}, map range {S.min():.4f}..{S.max():.4f}")
 
-    torch.cuda.empty_cache()                         # the first pass ran in this process
+    device.empty_cache()                         # the first pass ran in this process
     cands = _candidates(G, lum, plan, flagged, log)
     scaled = scaled and min(H, W) >= SCALED_SIDE
     if not scaled:
@@ -251,7 +252,7 @@ def repair(S, G, plan, tp, rows, bgr, infer, merge_device="cpu", stage=None, log
     total = len(cands) + (len(every) if scaled else 0)
     chosen = _run_frames(cands, bgr, G, lum, plan, infer, chunk, stage, log, total) if cands else {}
     soft = _run_scaled(every, bgr, G, lum, plan, infer, chunk, stage, log, len(cands), total) if scaled else {}
-    torch.cuda.empty_cache()
+    device.empty_cache()
     for t in every:
         c = chosen.get(t["name"])
         pick = f"frame ({c['x0']},{c['y0']}), {c['why']}" if c else "scaled frame only" if t["name"] in soft else "none qualifies, its grid tile stays"
@@ -332,10 +333,10 @@ def repair(S, G, plan, tp, rows, bgr, infer, merge_device="cpu", stage=None, log
     Gf = np.clip(G, float(S.min()), float(S.max()))
     Tm = ((num + np.clip(1 - den, 0, 1) * Gf) / np.maximum(den, 1.0)).astype(np.float32)
     del num, den, records, FCOV, COV
-    torch.cuda.empty_cache()
+    device.empty_cache()
     F = TC.laplacian_merge(G, Tm, MERGE_R, merge_device)[0].astype(np.float32)
     del Tm
-    torch.cuda.empty_cache()
+    device.empty_cache()
     log(f"[sky_repair] laplacian merge r{MERGE_R}: range {F.min():.4f}..{F.max():.4f}")
 
     # ---- thin dark lines near a large sky

@@ -27,10 +27,10 @@ def _sky(S, G, plan, tp, rows, photo, infer, merge_device, stage, log, chunk, li
         info["sky"] = res[1] if res is not None else dict(flagged=[])
         return res[0] if res is not None else S
     except Exception as e:                           # a GPU out-of-memory lands here too
-        import torch
+        from . import device
         log(f"[sky_repair] FAILED, the photo keeps the unrepaired map: {type(e).__name__}: {e}\n{traceback.format_exc()}")
         info["sky"] = dict(failed=f"{type(e).__name__}: {e}")
-        torch.cuda.empty_cache()
+        device.empty_cache(merge_device)
         if warn:
             warn(f"The sky repair stopped ({type(e).__name__}); this photo keeps its depth map without it.")
         return S

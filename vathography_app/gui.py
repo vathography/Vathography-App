@@ -21,19 +21,20 @@ import webbrowser
 from tkinter import filedialog, ttk
 from tkinter import font as tkfont
 
-from . import __version__, cli, download, models, outnames, third_party
+from . import __version__, cli, download, models, outnames, platform_io, third_party
 
 APP_NAME = "Vathography App"
 PKG_DIR = os.path.dirname(os.path.abspath(__file__))
 PKG_PARENT = os.path.dirname(PKG_DIR)
 APP_HOME = models.APP_HOME          # the portable package = <APP_HOME>\app\vathography_app ; the dev repo = <APP_HOME>
+INSTALL_HOME = models.INSTALL_HOME  # the app's own files (= APP_HOME on Windows; APP_HOME = Application Support in a Mac bundle)
 SETTINGS = os.path.join(APP_HOME, "settings.json")
 RUN_LOG = os.path.join(APP_HOME, "last_run.log")
 DEFAULT_MODELS = models.DEFAULT_DIR                     # beside the app
 ICON = os.path.join(PKG_DIR, "assets", "vathography_app.ico")
 # the notices shipped beside the app (packaging\NOTICE.txt in the dev repo)
-NOTICE = next((p for p in (os.path.join(APP_HOME, "NOTICE.txt"), os.path.join(APP_HOME, "packaging", "NOTICE.txt"))
-               if os.path.isfile(p)), os.path.join(APP_HOME, "NOTICE.txt"))
+NOTICE = next((p for p in (os.path.join(INSTALL_HOME, "NOTICE.txt"), os.path.join(INSTALL_HOME, "packaging", "NOTICE.txt"))
+               if os.path.isfile(p)), os.path.join(INSTALL_HOME, "NOTICE.txt"))
 BUDGET_MIN = 4.6            # GiB: one input per weight pass (backend BASE 3.9 + MARGIN 0.7); measured on a 6 GB card
 BUDGET_MAX = 6.5            # GiB: = BUDGET_MIN, the budget is fixed (measured: no speed gain above 6.5)
 RAM_WARN_GB = 16
@@ -47,7 +48,7 @@ BG, BG_ALT, SURFACE = "#121110", "#191715", "#1d1b19"
 TEXT, TEXT_SOFT, TEXT_FAINT = "#eeebe6", "#b3aca2", "#837c72"
 LINE, ACCENT, ACCENT_SOFT, ON_ACCENT = "#2e2b27", "#d8ac4d", "#3a3020", "#1b1a18"
 TAB_BACK, TAB_DISABLED = "#0b0a09", "#4a4540"   # an unselected tab (behind the window) · a tab with nothing to show
-SERIF, SANS = "Palatino Linotype", "Segoe UI"
+SERIF, SANS, MONO = platform_io.fonts()   # Windows: Palatino Linotype, Segoe UI, Consolas; macOS: Palatino, Helvetica Neue, Menlo
 COMBO_WIDTH = 44            # characters: the longest choice + room for a chosen folder's path
 BESIDE, CHOOSE = "Next to each photo", "Choose a folder…"
 BESIDE_FILE = "Next to each file"                       # the Relief tab's inputs are depth maps, not photos
@@ -123,31 +124,26 @@ def save_settings(d):
 
 
 def gpu_info():
-    """-> dict(name, total_gib, free_gib, cc) of GPU 0, or None (no NVIDIA driver)."""
+    """-> dict(name, total_gib, free_gib, cc) of GPU 0, or None (no NVIDIA driver; always None on a Mac)."""
+    if platform_io.IS_MAC:
+        return None
     exe = shutil.which("nvidia-smi") or r"C:\Windows\System32\nvidia-smi.exe"
     try:
         r = subprocess.run([exe, "--query-gpu=name,memory.total,memory.free,compute_cap", "--format=csv,noheader,nounits"],
-                           capture_output=True, text=True, timeout=15, creationflags=subprocess.CREATE_NO_WINDOW)
+                           capture_output=True, text=True, timeout=15, **platform_io.no_window())
         name, total, free, cc = [x.strip() for x in r.stdout.strip().splitlines()[0].split(",")]
         return dict(name=name, total_gib=float(total) / 1024, free_gib=float(free) / 1024, cc=float(cc))
     except Exception:
         return None
 
 
-def ram_gb():
-    class MS(ctypes.Structure):
-        _fields_ = [("dwLength", ctypes.c_ulong), ("dwMemoryLoad", ctypes.c_ulong), ("ullTotalPhys", ctypes.c_ulonglong),
-                    ("ullAvailPhys", ctypes.c_ulonglong), ("ullTotalPageFile", ctypes.c_ulonglong),
-                    ("ullAvailPageFile", ctypes.c_ulonglong), ("ullTotalVirtual", ctypes.c_ulonglong),
-                    ("ullAvailVirtual", ctypes.c_ulonglong), ("ullAvailExtendedVirtual", ctypes.c_ulonglong)]
-    m = MS()
-    m.dwLength = ctypes.sizeof(MS)
-    ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(m))
-    return m.ullTotalPhys / 1e9
+ram_gb = platform_io.ram_gb
 
 
 def preflight():
     """-> (budget_gib or None, [sentences]). None = cannot run."""
+    if platform_io.IS_MAC:
+        return preflight_mac()
     g = gpu_info()
     if g is None:
         return None, ["No NVIDIA graphics card was found (or its driver is missing). The app needs one."]
@@ -163,11 +159,23 @@ def preflight():
     return round(budget, 1), notes
 
 
-def worker_python():
-    exe = sys.executable
-    if os.path.basename(exe).lower() == "pythonw.exe":
-        exe = os.path.join(os.path.dirname(exe), "python.exe")
-    return exe
+def preflight_mac():
+    """Apple silicon + macOS 14. Memory is unified (graphics and system share it): no free-VRAM test; the budget =
+    BUDGET_MAX (it sizes the groups of inputs per weight pass). The memory floor is not known yet: below 24 GB a note,
+    never a refusal."""
+    why = platform_io.mac_problem()
+    if why:
+        return None, [why]
+    notes = []
+    try:
+        if ram_gb() < 23:
+            notes.append(f"This Mac has {ram_gb():.0f} GB of memory; the app may be slow or fail below 24 GB.")
+    except Exception:
+        pass
+    return BUDGET_MAX, notes
+
+
+worker_python = platform_io.worker_python
 
 
 # ---------------------------------------------------------------- the worker (one process per batch)
@@ -188,7 +196,7 @@ class Worker:
             self.p = subprocess.Popen([worker_python(), "-E", "-s", "-u", "-m", "vathography_app"] + args + ["--progress-json"],
                                       cwd=PKG_PARENT, env=env, stdout=subprocess.PIPE, stderr=self.log,
                                       text=True, encoding="utf-8", errors="replace",
-                                      creationflags=subprocess.CREATE_NO_WINDOW)
+                                      **platform_io.no_window())
         except OSError:
             self.log.close()
             raise
@@ -799,6 +807,8 @@ class App:
 
     def _gpu_sentence(self):
         """'' = this computer has a card the app can use; else why not (before 2.9 GB are downloaded for nothing)."""
+        if platform_io.IS_MAC:
+            return platform_io.mac_problem() or ""
         g = gpu_info()
         if g is None:
             return ("This computer has no NVIDIA graphics card the app can use, or its driver is missing, so the app "
@@ -830,8 +840,7 @@ class App:
         """None when the drive of third_party\\ has room for the wheels + their unpacked files (+ the models still to
         download, when they go to the same drive), else a sentence."""
         unpacked = sum(e["unpacked_size"] for e in miss)
-        same = (os.path.splitdrive(os.path.abspath(self.models_dir))[0].lower()
-                == os.path.splitdrive(os.path.abspath(third_party.HOME))[0].lower())
+        same = platform_io.same_volume(self.models_dir, third_party.HOME)
         models_left = download.bytes_needed(self.models_dir, download.missing(self.models_dir, ["depth", "see-through"])) if same else 0
         return download.check_space(third_party.HOME, miss, extra=unpacked + models_left,
                                     what="PyTorch, OpenCV and the models" if models_left else "PyTorch and OpenCV")
@@ -916,7 +925,7 @@ class App:
         box = tk.Frame(parent, bg=BG)
         box.pack(fill="both", expand=True, padx=12, pady=(12, 6))
         t = tk.Text(box, bg=SURFACE, fg=TEXT, insertbackground=TEXT, relief="flat", bd=0, wrap="none",
-                    font=("Consolas", 9), padx=8, pady=6, selectbackground=ACCENT_SOFT, selectforeground=TEXT)
+                    font=(MONO, 9), padx=8, pady=6, selectbackground=ACCENT_SOFT, selectforeground=TEXT)
         sy = ttk.Scrollbar(box, orient="vertical", command=t.yview)
         sx = ttk.Scrollbar(box, orient="horizontal", command=t.xview)
         t.configure(yscrollcommand=sy.set, xscrollcommand=sx.set)
@@ -930,21 +939,24 @@ class App:
     def troubleshooting_text(self):
         """What we need to help: the app, the machine, the settings, then the last run's log, exactly as written."""
         g = gpu_info()
-        try:
-            r = subprocess.run([shutil.which("nvidia-smi") or r"C:\Windows\System32\nvidia-smi.exe",
-                                "--query-gpu=driver_version", "--format=csv,noheader"], capture_output=True, text=True,
-                               timeout=15, creationflags=subprocess.CREATE_NO_WINDOW)
-            driver = r.stdout.strip().splitlines()[0]
-        except Exception:
-            driver = "?"
+        driver = "?"
+        if g:
+            try:
+                r = subprocess.run([shutil.which("nvidia-smi") or r"C:\Windows\System32\nvidia-smi.exe",
+                                    "--query-gpu=driver_version", "--format=csv,noheader"], capture_output=True, text=True,
+                                   timeout=15, **platform_io.no_window())
+                driver = r.stdout.strip().splitlines()[0]
+            except Exception:
+                pass
         try:
             ram = f"{ram_gb():.0f} GB"
         except Exception:
             ram = "?"
         lines = [f"{APP_NAME} {__version__}",
-                 f"Windows: {platform.platform()}",
+                 platform_io.os_line(),
                  (f"Graphics card: {g['name']} | {g['total_gib']:.1f} GB, {g['free_gib']:.1f} GB free | "
-                  f"compute {g['cc']} | driver {driver}") if g else "Graphics card: no NVIDIA card found",
+                  f"compute {g['cc']} | driver {driver}") if g else
+                 (f"Chip: {platform_io.chip_name() or '?'}" if platform_io.IS_MAC else "Graphics card: no NVIDIA card found"),
                  f"Memory: {ram}",
                  f"Models folder: {self.models_dir} (found: "
                  f"{', '.join(m for m in ('depth', 'see-through') if self.models_ok(m)) or 'none'})",
@@ -1081,8 +1093,7 @@ class App:
             if not need:
                 return
         tp = self.tp_missing()                          # PyTorch + OpenCV still to come onto the same drive
-        same = (os.path.splitdrive(os.path.abspath(self.models_dir))[0].lower()
-                == os.path.splitdrive(os.path.abspath(third_party.HOME))[0].lower())
+        same = platform_io.same_volume(self.models_dir, third_party.HOME)
         tp_left = (download.bytes_needed(third_party.HOME, tp) + sum(e["unpacked_size"] for e in tp)) if (tp and same) else 0
         msg = download.check_space(self.models_dir, need, extra=tp_left,
                                    what="the models, PyTorch and OpenCV" if tp_left else "the models")
@@ -1446,6 +1457,8 @@ def main(argv=None):
     except tk.TclError:
         pass
     dark_title_bar(root)
-    App(root, list(argv or []))
+    app = App(root, list(argv or []))
+    if platform_io.IS_MAC:     # photos dropped on the Dock / Finder icon (the Mac form of "drop on the .bat")
+        root.createcommand("::tk::mac::OpenDocument", lambda *paths: app.add(app.tab_depth, list(paths)))
     root.mainloop()
     return 0

@@ -36,16 +36,11 @@ import torch.nn.functional as F
 from safetensors import safe_open
 from safetensors.torch import load_file
 
+from . import device as D
+
 FORMAT = "vathography-nf4-v1"
 SIGMA = 0.5
-# attention kernels, best first. Flash is missing from the Windows torch build, so cuDNN runs (2.6x faster per call
-# than PyTorch's default "efficient" kernel; a 33 MP photo 141 -> 115 s, map rms 0.0029 vs it, judged similar).
-try:
-    from torch.nn.attention import SDPBackend, sdpa_kernel
-    KERNELS_BEST_FIRST = [getattr(SDPBackend, k) for k in ("FLASH_ATTENTION", "CUDNN_ATTENTION", "EFFICIENT_ATTENTION",
-                                                           "MATH")]
-except ImportError:                                  # the pinned torch 2.10 has it; never reached in the package
-    sdpa_kernel = None
+# attention kernels (CUDA: cuDNN first) and the Mac's head-chunked attention: device.attention
 LORA_PREFIX = "diffusion_model."
 # img_in lora_B |sum| (float32) -> recipe; = native_backend.LORA_FINGERPRINTS (node 1.3.0)
 LORA_FINGERPRINTS = {"depth": 3005.3411, "see-through": 3126.4729}
@@ -115,7 +110,7 @@ class NF4Linear(torch.nn.Module):
     def _dev(self, t, dev):
         if t.device != dev:
             NF4Linear.h2d_bytes += t.numel() * t.element_size()
-            return t.to(dev, non_blocking=True)
+            return t.to(dev, non_blocking=D.non_blocking(dev))
         return t
 
     def forward(self, x):
@@ -333,7 +328,7 @@ class Streamer:
     def upload(self, i, dev):
         t0 = time.time()
         for p, cpu in self.blocks[i]:
-            p.data = cpu.to(dev, non_blocking=True)
+            p.data = cpu.to(dev, non_blocking=D.non_blocking(dev))
             if torch.device(dev).type != "cpu":
                 self.h2d_bytes += cpu.numel() * cpu.element_size()
         # each nf4 layer unpacked ONCE for the whole group (was: once per input per layer). Same nf4_decode on the same
@@ -421,8 +416,7 @@ def step_layer_major(tr, streamer, cond, lats, dev, states="gpu", tick=None, sub
 
 
 def _sync(dev):
-    if torch.device(dev).type == "cuda":
-        torch.cuda.synchronize(dev)
+    D.synchronize(dev)
 
 
 def run_inputs(tr, vae, mean, std, cond, inputs, dev, mode, streamer=None, states="gpu", log_fn=None):
@@ -452,12 +446,12 @@ class Model:
     progress)` = the contract of the node's run_pipeline (inputs: uint8 BGR /16, M1 first; returns float32 (H, W) raw
     predictions in the same order)."""
 
-    def __init__(self, nf4_path, lora_path, vae_path, cond_path, vae_config_dir, device="cuda", budget_gib=6.5, log_fn=None,
+    def __init__(self, nf4_path, lora_path, vae_path, cond_path, vae_config_dir, device=None, budget_gib=6.5, log_fn=None,
                  stage=None, label="depth"):
         """stage(name, done=None, total=None): progress of each loading step (None = silent)."""
         self.say = log_fn or log
         self.stage = stage or (lambda *a, **k: None)
-        self.dev = torch.device(device)
+        self.dev = torch.device(device) if device is not None else D.pick()
         self.tr, self.recipe, self.info = load_transformer(nf4_path, lora_path, stage=self.stage, label=label)
         self.stage("loading the image decoder")
         self.vae, self.mean, self.std = load_vae(vae_path, vae_config_dir)
@@ -466,14 +460,13 @@ class Model:
         self.streamer = place(self.tr, "layer_major", self.dev)
         self.vae.to(self.dev)
         self.group = group_size(budget_gib)
+        with D.attention(self.dev) as att:
+            pass
         self.say(f"model {self.recipe}: layer-major on {self.dev}, VAE tiles {VAE_TILE}/{VAE_STRIDE}, "
-                 f"up to {self.group} inputs per weight pass (budget {budget_gib} GiB), attention "
-                 f"{'cuDNN first' if sdpa_kernel else 'PyTorch default'}")
+                 f"up to {self.group} inputs per weight pass (budget {budget_gib} GiB), attention {att}")
 
     def infer(self, inputs, progress=None, stage=None):
-        if sdpa_kernel is None:
-            return self._infer(inputs, progress, stage)
-        with sdpa_kernel(KERNELS_BEST_FIRST, set_priority=True):
+        with D.attention(self.dev):
             return self._infer(inputs, progress, stage)
 
     @torch.inference_mode()

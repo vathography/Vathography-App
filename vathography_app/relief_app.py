@@ -23,7 +23,7 @@ import os
 import numpy as np
 import torch
 
-from . import outnames, photo_io
+from . import device, outnames, photo_io
 from .engine import relief as RL
 from .engine import relief_colour as RC
 
@@ -98,9 +98,14 @@ def file_is_grey(path):
 
 
 def devices_for(H, W, colour, budget_gib, gpu):
-    """-> (colour_device, llf_device) under the budget; gpu = None means no CUDA."""
+    """-> (colour_device, llf_device) under the budget; gpu = None means no GPU. The colour maths are float64, which
+    Metal (mps) does not have: on a Mac they always run on the CPU, the Local Laplacian (float32) on the GPU."""
     if gpu is None:
         return "cpu", "cpu"
+    if gpu == "mps":
+        if not colour:
+            return None, (gpu if H * W * WORK_BYTES_PER_PX <= budget_gib * 2 ** 30 else "cpu")
+        return "cpu", (gpu if H * W * WORK_BYTES_PER_PX <= budget_gib * 2 ** 30 else "cpu")
     budget = budget_gib * 2 ** 30
     if not colour:
         return None, (gpu if H * W * WORK_BYTES_PER_PX <= budget else "cpu")
@@ -139,7 +144,7 @@ def run(path, level, budget_gib=6.5, out_dir=None, log=print, stage=None):
     grey = file_is_grey(path)
     if grey is None:
         grey = float(max(np.abs(img[..., 0] - img[..., 1]).max(), np.abs(img[..., 0] - img[..., 2]).max())) <= GREY_TOL
-    gpu = "cuda" if torch.cuda.is_available() else None
+    gpu = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else None
     cdev, ldev = devices_for(H, W, not grey, budget_gib, gpu)
     log(f"[relief] {os.path.basename(path)}: {W}x{H} | input '{source}' | strength {level} | "
         f"{'grey' if grey else 'colour'} (from the file) | devices {cdev or '-'} / {ldev}")
@@ -156,5 +161,5 @@ def run(path, level, budget_gib=6.5, out_dir=None, log=print, stage=None):
                                    [(kind, photo_io.encode_depth(out, kind, tagged=(source == RL.SOURCES[2])))],
                                    aliases=(f"{stem}_relief_level{int(level)}",))[0]
     if gpu:
-        torch.cuda.empty_cache()
+        device.empty_cache(gpu)
     return dst, info

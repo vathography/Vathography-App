@@ -9,13 +9,18 @@ import hashlib
 import json
 import os
 
+from . import platform_io
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 MANIFEST = os.path.join(HERE, "model_manifest.json")
 VAE_CONFIG_DIR = os.path.join(HERE, "vae_config")
 # the models folder beside the app: the portable package = <APP_HOME>\app\vathography_app ; the dev repo =
 # <APP_HOME>\vathography_app
 _PARENT = os.path.dirname(HERE)
-APP_HOME = os.path.dirname(_PARENT) if os.path.basename(_PARENT).lower() == "app" else _PARENT
+# INSTALL_HOME = where the app's own files are (read-only on a Mac: inside the .app bundle); APP_HOME = where its data
+# goes (models, third_party, settings, run log) = INSTALL_HOME on Windows, Application Support in a macOS bundle
+INSTALL_HOME = os.path.dirname(_PARENT) if os.path.basename(_PARENT).lower() == "app" else _PARENT
+APP_HOME = platform_io.data_home(INSTALL_HOME)
 DEFAULT_DIR = os.path.join(APP_HOME, "models")
 
 
