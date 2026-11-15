@@ -65,7 +65,7 @@ ICON_SIZES = [(16, ""), (32, "@2x", 16), (32, ""), (64, "@2x", 32), (128, ""), (
 
 
 def say(*a):
-    print("[build-mac]", *a, flush=True)
+    print("[build-mac]", *a, file=sys.stderr, flush=True)   # stdout carries only values a caller captures
 
 
 def run(cmd, **kw):
