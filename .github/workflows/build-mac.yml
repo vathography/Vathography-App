@@ -12,8 +12,11 @@ permissions:
 
 jobs:
   build-mac:
-    runs-on: macos-14            # Apple silicon, macOS 14 = the app's oldest supported macOS
+    runs-on: macos-15            # Apple silicon (GitHub retired the arm64 macos-14 image); builds still target macOS 14
     timeout-minutes: 120
+    defaults:
+      run:
+        shell: bash              # = bash -eo pipefail: a failing script before "| tee" fails the step
     steps:
       - name: Check out the source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
