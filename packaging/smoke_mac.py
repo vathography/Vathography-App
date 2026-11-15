@@ -68,7 +68,7 @@ check("S4 PyTorch + OpenCV installed offline into Application Support",
       r.returncode == 0 and os.path.isdir(os.path.join(support, "third_party")), r.stdout + r.stderr)
 r = prun(["-c", "from vathography_app import third_party as T; T.add_to_path(); import torch, cv2; "
                 "print(torch.__file__); print(cv2.__file__); print(torch.backends.mps.is_built())"])
-lines = r.stdout.split()
+lines = r.stdout.splitlines()                             # by LINE: the paths hold "Application Support" (a space)
 check("S5 torch + cv2 load from Application Support/third_party, MPS built in",
       r.returncode == 0 and len(lines) == 3 and all(l.startswith(os.path.join(support, "third_party")) for l in lines[:2])
       and lines[2] == "True", r.stdout + r.stderr)
