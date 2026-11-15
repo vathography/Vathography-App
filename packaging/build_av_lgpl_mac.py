@@ -51,7 +51,9 @@ def main():
     if sys.platform != "darwin" or platform.machine() != "arm64":
         raise SystemExit("build_av_lgpl_mac.py runs on an Apple silicon Mac (the GitHub Actions macOS runner)")
     target_py = os.path.abspath(sys.argv[1])
-    env = dict(os.environ, MACOSX_DEPLOYMENT_TARGET="14.0")
+    # GIT_CEILING_DIRECTORIES: FFmpeg's version.sh asks `git describe` first; inside the app's checkout it would name
+    # the APP's commit. Stopping git at WORK makes it fall back to RELEASE ("8.1.1"), as on Windows (C:\ffbuild).
+    env = dict(os.environ, MACOSX_DEPLOYMENT_TARGET="14.0", GIT_CEILING_DIRECTORIES=WORK)
     run(["clang", "--version"])
     # 1 FFmpeg
     tgz = os.path.join(CACHE, "ffmpeg_src", "ffmpeg-n8.1.1.tar.gz")
@@ -65,6 +67,9 @@ def main():
     if 'FFMPEG_LICENSE "LGPL version 2.1 or later"' not in cfg:
         raise SystemExit("FFmpeg's configure did not settle on LGPL-2.1-or-later")
     run(["make", f"-j{os.cpu_count() or 4}"], cwd=src, env=env, stdout=subprocess.DEVNULL)
+    ver = open(os.path.join(src, "libavutil", "ffversion.h"), encoding="utf-8", errors="replace").read()
+    if '#define FFMPEG_VERSION "8.1.1"' not in ver:
+        raise SystemExit(f"FFmpeg's version string is not 8.1.1 (libavutil/ffversion.h):\n{ver}")
     run(["make", "install"], cwd=src, env=env, stdout=subprocess.DEVNULL)
     # 2 PyAV, built by the target Python in its own venv
     sd = os.path.join(CACHE, "pyav_src", "av-17.1.0.tar.gz")
