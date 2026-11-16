@@ -48,6 +48,14 @@ ok, info = verify()
 check("S1 unzipped, signature verifies", r.returncode == 0 and ok, info)
 if not res[-1]:
     sys.exit(1)
+if os.environ.get("SEED_DEFECT") == "smoke":             # must-fire test run: smoke has to go red
+    seeded = os.path.join(appdir, "vathography_app", "outnames.py")
+    for f in [seeded] + [os.path.join(appdir, "vathography_app", "__pycache__", n)
+                         for n in os.listdir(os.path.join(appdir, "vathography_app", "__pycache__"))
+                         if n.startswith("outnames.")]:
+        os.remove(f)
+    print("SEEDED DEFECT smoke: removed vathography_app/outnames.py (+ its .pyc) from the unzipped bundle; "
+          "S5 'every module imports' and S7 'signature' must FAIL", flush=True)
 
 
 def prun(args, timeout=900):

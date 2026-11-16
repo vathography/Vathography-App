@@ -1016,6 +1016,8 @@ class App:
         link = tk.Label(head, text="vathography.com", bg=BG, fg=ACCENT, font=(SANS, 10, "underline"), cursor="hand2")
         link.pack(pady=(2, 0))
         link.bind("<Button-1>", lambda e: webbrowser.open("https://vathography.com"))
+        tk.Label(head, text="By Karim Joseph Nassar, developed with Claude Code.", bg=BG, fg=TEXT_SOFT,
+                 font=(SANS, 10)).pack(pady=(6, 0))
         try:
             with open(NOTICE, encoding="utf-8") as fh:
                 notice = fh.read()

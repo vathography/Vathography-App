@@ -1,5 +1,7 @@
 Vathography App - depth maps from photographs, without ComfyUI.
 
+By Karim Joseph Nassar, developed with Claude Code.
+
 Start: double-click "Vathography App.bat", or drop photos or a folder on it.
 
 The first start needs two downloads, each started by your click in the window. The models (about 15.5 GB) go into the models folder next to the app; if you already have them (for example in a ComfyUI models folder), choose "I already have them" instead. PyTorch and OpenCV (about 2.9 GB) come from their publishers, pytorch.org and PyPI, and are installed in the third_party folder next to the app; they are not included in this download and are used under their own licences (see NOTICE.txt).

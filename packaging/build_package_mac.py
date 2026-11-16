@@ -54,6 +54,15 @@ PBS_URL = ("https://github.com/astral-sh/python-build-standalone/releases/downlo
            "cpython-3.10.21%2B20260901-aarch64-apple-darwin-install_only.tar.gz")
 PBS_SHA = "cee232aabfb6790eec78f3cca935caeb7bd4eedca4dcb0a10dbcdb4302320b38"   # release SHA256SUMS, 2026-11-15
 FFMPEG_SRC = os.path.join(CACHE, "ffmpeg_src", "ffmpeg-n8.1.1.tar.gz")        # build_av_lgpl_mac.py fetched it
+# SciPy's macOS wheel ships libquadmath (LGPL-2.1-or-later) as a separate dylib: its source goes into source/ (ruled
+# W1, 2026-11-16). Its build paths name GCC 13.3.0 for aarch64-apple-darwin23 = Homebrew's gcc@13 13.3.0 (2024-05-22),
+# GNU's tarball + Homebrew's Apple silicon patch; the build stops if the shipped library no longer carries that mark.
+GCC_URL = "https://ftp.gnu.org/gnu/gcc/gcc-13.3.0/gcc-13.3.0.tar.xz"
+GCC_SHA = "0845e9621c9543a13f484e94584a49ffc0129970e9914624235fc1d061a0c083"     # Homebrew gcc@13 13.3.0 formula
+GCC_PATCH_URL = ("https://raw.githubusercontent.com/Homebrew/formula-patches/bda0faddfbfb392e7b9c9101056b2c5ab2500508/"
+                 "gcc/gcc-13.3.0.diff")
+GCC_PATCH_SHA = "c5e9236430ef6edbdda7de9ac70bf79e21628077a48322cec7f3f064ccfc243d"
+QUADMATH_MARK = b"/gcc-13.3.0/build/aarch64-apple-darwin23/libquadmath/"
 KEEP_BIN = ("python", "python3", "python3.10")            # every other runtime/bin entry is a script with a build path
 STRIP_DIRS = ("include", os.path.join("lib", "pkgconfig"), "share",
               os.path.join("lib", "python3.10", "config-3.10-darwin"),
@@ -89,17 +98,23 @@ def tree_size(p):
                if not os.path.islink(os.path.join(a, f)))
 
 
-def fetch_python():
+def fetch_checked(url, sha, name, what):
+    """-> the cached file `name`, downloaded once and kept only when its sha256 is `sha`."""
     os.makedirs(CACHE, exist_ok=True)
-    tgz = os.path.join(CACHE, os.path.basename(PBS_URL).replace("%2B", "+"))
-    if not (os.path.isfile(tgz) and W.sha(tgz) == PBS_SHA):
-        say("downloading", PBS_URL)
-        urllib.request.urlretrieve(PBS_URL, tgz + ".part")
-        if W.sha(tgz + ".part") != PBS_SHA:
-            os.remove(tgz + ".part")
-            raise SystemExit("python-build-standalone (aarch64): sha256 mismatch")
-        os.replace(tgz + ".part", tgz)
-    return tgz
+    p = os.path.join(CACHE, name)
+    if not (os.path.isfile(p) and W.sha(p) == sha):
+        say("downloading", url)
+        urllib.request.urlretrieve(url, p + ".part")
+        if W.sha(p + ".part") != sha:
+            os.remove(p + ".part")
+            raise SystemExit(f"{what}: sha256 mismatch")
+        os.replace(p + ".part", p)
+    return p
+
+
+def fetch_python():
+    return fetch_checked(PBS_URL, PBS_SHA, os.path.basename(PBS_URL).replace("%2B", "+"),
+                         "python-build-standalone (aarch64)")
 
 
 def mac_pins():
@@ -340,7 +355,7 @@ def main():
         shutil.copy(W.APP_LICENSE, os.path.join(d, "LICENSE"))
         shutil.copy(notice, os.path.join(d, "NOTICE.txt"))
     shutil.copy(readme, os.path.join(FOLDER, "README.txt"))
-    shutil.copytree(os.path.join(PKG, "licences"), os.path.join(FOLDER, "licences"))
+    shutil.copytree(os.path.join(PKG, "licences_macos"), os.path.join(FOLDER, "licences"))   # the Mac set (W2)
     src_dir = os.path.join(FOLDER, "source")
     os.makedirs(src_dir)
     if W.sha(FFMPEG_SRC) != W.FFMPEG_SRC_SHA:
@@ -351,7 +366,21 @@ def main():
         m = next(x for x in t.getmembers() if x.name.endswith("/COPYING.LGPLv2.1"))
         with open(os.path.join(src_dir, "COPYING.LGPLv2.1"), "wb") as f:
             f.write(t.extractfile(m).read())
-    shutil.copy(os.path.join(PKG, "SOURCE_README.txt"), os.path.join(src_dir, "README.txt"))
+    quad = glob.glob(os.path.join(runtime, "lib", "python3.10", "site-packages", "scipy", ".dylibs", "libquadmath*"))
+    if len(quad) != 1 or QUADMATH_MARK not in open(quad[0], "rb").read():
+        raise SystemExit(f"SciPy's libquadmath is not the GCC 13.3.0 build whose source source/ carries: {quad}")
+    shutil.copy(fetch_checked(GCC_URL, GCC_SHA, "gcc-13.3.0.tar.xz", "GCC 13.3.0"),
+                os.path.join(src_dir, "gcc-13.3.0.tar.xz"))
+    shutil.copy(fetch_checked(GCC_PATCH_URL, GCC_PATCH_SHA, "gcc-13.3.0.diff", "Homebrew's GCC 13.3.0 patch"),
+                os.path.join(src_dir, "gcc-13.3.0.diff"))
+    clang = subprocess.run(["clang", "--version"], capture_output=True, text=True).stdout.splitlines()
+    if not clang or "clang" not in clang[0]:
+        raise SystemExit(f"clang --version gave no version line: {clang}")
+    text = open(os.path.join(MAC, "SOURCE_README.txt"), encoding="utf-8").read()
+    if text.count("{CLANG_VERSION}") != 1:
+        raise SystemExit("packaging/macos/SOURCE_README.txt: expected one {CLANG_VERSION}")
+    with open(os.path.join(src_dir, "README.txt"), "w", encoding="utf-8", newline="\n") as f:
+        f.write(text.replace("{CLANG_VERSION}", clang[0].strip()))
     # precompiled once, here: with every .pyc present and valid, Python never writes into the signed bundle
     r = subprocess.run([py, "-E", "-s", "-m", "compileall", "-q", "-j", "0", os.path.join(runtime, "lib"),
                         os.path.join(RES, "app")], capture_output=True, text=True)

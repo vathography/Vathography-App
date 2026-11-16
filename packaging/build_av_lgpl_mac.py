@@ -68,8 +68,13 @@ def main():
         raise SystemExit("FFmpeg's configure did not settle on LGPL-2.1-or-later")
     run(["make", f"-j{os.cpu_count() or 4}"], cwd=src, env=env, stdout=subprocess.DEVNULL)
     ver = open(os.path.join(src, "libavutil", "ffversion.h"), encoding="utf-8", errors="replace").read()
-    if '#define FFMPEG_VERSION "8.1.1"' not in ver:
-        raise SystemExit(f"FFmpeg's version string is not 8.1.1 (libavutil/ffversion.h):\n{ver}")
+    want = "8.1.1"
+    if os.environ.get("SEED_DEFECT") == "ffversion":     # must-fire test run: this check has to stop the build
+        want = "0.0.0-seeded"
+        print("[av-lgpl-mac] SEEDED DEFECT ffversion: expecting a version FFmpeg is not; the build must stop here",
+              flush=True)
+    if f'#define FFMPEG_VERSION "{want}"' not in ver:
+        raise SystemExit(f"FFmpeg's version string is not {want} (libavutil/ffversion.h):\n{ver}")
     run(["make", "install"], cwd=src, env=env, stdout=subprocess.DEVNULL)
     # 2 PyAV, built by the target Python in its own venv
     sd = os.path.join(CACHE, "pyav_src", "av-17.1.0.tar.gz")
