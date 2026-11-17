@@ -26,7 +26,7 @@ To update the app: replace the old app with the new one. The models, PyTorch and
 
 To report a problem: in the app, open the gear menu, then Troubleshooting log, copy the log and paste it in a new issue at https://github.com/vathography/Vathography-App/issues. Issues are public and the log shows your folder and file names, so look through it first.
 
-Licence: Vathography App is free software under the GNU Affero General Public License version 3 only (AGPL-3.0-only), with additional permissions (see LICENSE). Its complete source code, including the scripts that build this download, is at https://github.com/vathography/Vathography-App, tag app-0.2.0-rc1.The works it includes and the software it downloads keep their own licences (see NOTICE.txt and the licences folder).
+Licence: Vathography App is free software under the GNU Affero General Public License version 3 only (AGPL-3.0-only), with additional permissions (see LICENSE). Its complete source code, including the scripts that build this download, is at https://github.com/vathography/Vathography-App, tag app-0.2.0-rc2. The works it includes and the software it downloads keep their own licences (see NOTICE.txt and the licences folder).
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE. This applies to the extent permitted by applicable law.
 

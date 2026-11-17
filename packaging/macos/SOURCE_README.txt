@@ -19,3 +19,7 @@ libquadmath.0.dylib in Vathography App.app/Contents/Resources/runtime/lib/python
 The build paths recorded in the library show that it was built from GCC 13.3.0 for aarch64-apple-darwin23, as in Homebrew's gcc@13 13.3.0 package of 2024-05-22, which applies Homebrew's patch for Apple silicon. Its source is the libquadmath folder of that patched tree:
 - gcc-13.3.0.tar.xz in this folder: GCC 13.3.0 as published at https://ftp.gnu.org/gnu/gcc/gcc-13.3.0/, sha256 0845e9621c9543a13f484e94584a49ffc0129970e9914624235fc1d061a0c083.
 - gcc-13.3.0.diff in this folder: Homebrew's patch, as published at https://raw.githubusercontent.com/Homebrew/formula-patches/bda0faddfbfb392e7b9c9101056b2c5ab2500508/gcc/gcc-13.3.0.diff, sha256 c5e9236430ef6edbdda7de9ac70bf79e21628077a48322cec7f3f064ccfc243d.
+
+libgfortran and libgcc_s
+
+libgfortran.5.dylib and libgcc_s.1.1.dylib in the same SciPy folder were built from the same patched GCC 13.3.0 tree; their source is its libgfortran and libgcc folders, in the two files above. They are licensed under the GNU General Public License version 3 with the GCC Runtime Library Exception (texts in SciPy's dist-info folder, LICENSE.txt, and as COPYING3 and COPYING.RUNTIME in the GCC source).
