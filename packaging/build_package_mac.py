@@ -335,7 +335,10 @@ def main():
     run([py, "-E", "-s", "-c", draw, PKG, iconset] + names)
     run(["iconutil", "-c", "icns", iconset, "-o", os.path.join(RES, "vathography_app.icns")])
     shutil.rmtree(iconset)
-    info = open(os.path.join(MAC, "Info.plist"), encoding="utf-8").read().replace("{version}", __version__)
+    # Apple's two bundle-version keys take dotted numbers only: a pre-release (0.2.0rc1) writes its numeric part there;
+    # the window, the log, BUILD_INFO and the zip name keep the full version
+    plist_version = re.match(r"\d+(?:\.\d+)*", __version__).group(0)
+    info = open(os.path.join(MAC, "Info.plist"), encoding="utf-8").read().replace("{version}", plist_version)
     plistlib.loads(info.encode("utf-8"))                          # a malformed plist stops the build here
     with open(os.path.join(CONTENTS, "Info.plist"), "w", encoding="utf-8") as f:
         f.write(info)
