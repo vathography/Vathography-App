@@ -10,7 +10,7 @@ on:
       seed_defect:
         description: "Test run only: break one check on purpose (it must go red). Normal builds: none."
         type: choice
-        options: [none, smoke, ffversion]
+        options: [none, smoke, ffversion, supervisor]
         default: none
 
 permissions:
@@ -24,7 +24,7 @@ jobs:
       run:
         shell: bash              # = bash -eo pipefail: a failing script before "| tee" fails the step
     env:
-      SEED_DEFECT: ${{ inputs.seed_defect }}   # none on every normal build; smoke / ffversion = must-fire test runs
+      SEED_DEFECT: ${{ inputs.seed_defect }}   # none on every normal build; smoke / ffversion / supervisor = must-fire test runs
     steps:
       - name: Check out the source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
