@@ -5,11 +5,14 @@ Standard library only: it runs before either package exists.
 
   <APP_HOME>\third_party\<folder>\     one folder per manifest `third_party` entry, found by Python through ONE .pth file
                                        the package build writes into site-packages (two relative lines)
+                                       macOS: <APP_HOME> = ~/Library/Application Support/Vathography App, and
+                                       add_to_path() puts each folder on sys.path (no .pth inside the .app bundle)
   <folder>\.installed                  name + version + sha256, written LAST: an install is valid only when this file
                                        matches the pin, never because the folder exists
 
-install() verifies the wheel against its pin, unpacks it into <folder>.tmp on the same drive (leaving out C headers,
-import libraries, debug symbols, the two NVIDIA DLLs NVIDIA does not list as redistributable and OpenCV's video FFmpeg),
+install() verifies the wheel against its pin, unpacks it into <folder>.tmp on the same drive (leaving out, from the
+Windows wheels, C headers, import libraries, debug symbols, the two NVIDIA DLLs NVIDIA does not list as redistributable
+and OpenCV's video FFmpeg),
 writes .installed, then renames the folder into place. A crash at any point leaves no valid folder under the final name.
 One install at a time: a lock file names the process holding it; a second window refuses while that process lives.
 """
@@ -19,9 +22,10 @@ import json
 import os
 import shutil
 import time
+import sys
 import zipfile
 
-from . import models
+from . import models, platform_io
 
 HOME = os.path.join(models.APP_HOME, "third_party")
 MARK = ".installed"
@@ -29,8 +33,8 @@ LOCK = os.path.join(HOME, ".install.lock")
 BLOCK = 1 << 22                                   # progress + Stop every 4 MiB, also inside one large DLL
 SKIP_DIRS = ("torch/include/",)
 SKIP_SUFFIX = (".lib", ".pdb")
-SKIP_FILES = ("torch/lib/nvperf_host.dll", "torch/lib/cusolverMg64_11.dll")   # not in NVIDIA's redistribution lists
-SKIP_PREFIX = ("cv2/opencv_videoio_ffmpeg",)      # OpenCV's own FFmpeg: video I/O only, never used by the app
+SKIP_FILES = ("torch/lib/nvperf_host.dll", "torch/lib/cusolverMg64_11.dll")   # Windows: not in NVIDIA's redistribution lists
+SKIP_PREFIX = ("cv2/opencv_videoio_ffmpeg",)      # Windows: OpenCV's own FFmpeg DLL (video I/O only, never used by the app)
 
 
 class Cancelled(Exception):
@@ -42,8 +46,20 @@ class Busy(Exception):
 
 
 def entries():
+    """The pins for this platform: `third_party` (Windows) or `third_party_macos` (Apple silicon)."""
     with open(models.MANIFEST, encoding="utf-8") as f:
-        return json.load(f).get("third_party", [])
+        return json.load(f).get("third_party_macos" if platform_io.IS_MAC else "third_party", [])
+
+
+def add_to_path(home=None):
+    """macOS: each installed folder on sys.path (Windows finds them through the .pth the package build writes;
+    a .pth cannot be written into a signed .app bundle). Windows: nothing."""
+    if platform_io.IS_WIN:
+        return
+    for e in entries():
+        p = folder(e, home)
+        if installed(e, home) and p not in sys.path:
+            sys.path.append(p)
 
 
 def folder(entry, home=None):
@@ -86,17 +102,15 @@ def _found_elsewhere(entry, home=None):
 def over_old_version():
     """The package was unzipped over a version that still carried PyTorch / OpenCV in its runtime (0.1.6 and earlier):
     those leftovers shadow third_party\\. -> True only in the package layout (<APP_HOME>\\runtime exists)."""
-    site = os.path.join(models.APP_HOME, "runtime", "Lib", "site-packages")
+    if not platform_io.IS_WIN:
+        return False
+    site = os.path.join(models.INSTALL_HOME, "runtime", "Lib", "site-packages")
     return os.path.isdir(site) and any(os.path.isdir(os.path.join(site, d)) for d in ("torch", "cv2"))
 
 
 def missing(home=None):
     """The entries still to install (cheap: reads .installed files, imports nothing)."""
     return [e for e in entries() if not (installed(e, home) or _found_elsewhere(e, home))]
-
-
-def ready(home=None):
-    return not missing(home)
 
 
 def not_ready_sentence(miss):
@@ -115,7 +129,7 @@ def load_check():
             __import__(mod)
         except Exception as ex:                   # noqa: BLE001 -- any load failure ends in one sentence
             hint = ""
-            if isinstance(ex, OSError) or "DLL" in str(ex):
+            if platform_io.IS_WIN and (isinstance(ex, OSError) or "DLL" in str(ex)):
                 hint = (" Windows could not load one of its libraries: installing the Microsoft Visual C++ "
                         "Redistributable (x64) usually fixes this.")
             return f"{name} is installed but does not load ({type(ex).__name__}: {ex}).{hint}"
@@ -123,20 +137,7 @@ def load_check():
 
 
 def _pid_alive(pid):
-    if pid == os.getpid():
-        return True
-    try:
-        import ctypes
-        k = ctypes.windll.kernel32
-        h = k.OpenProcess(0x1000, False, pid)     # PROCESS_QUERY_LIMITED_INFORMATION
-        if not h:
-            return False
-        code = ctypes.c_ulong()
-        ok = k.GetExitCodeProcess(h, ctypes.byref(code))
-        k.CloseHandle(h)
-        return bool(ok) and code.value == 259     # STILL_ACTIVE
-    except (AttributeError, OSError):
-        return True                               # cannot tell: refuse rather than install twice
+    return platform_io.pid_alive(pid)
 
 
 def _lock(home):
@@ -202,12 +203,6 @@ def clean(home=None):
             _rmtree(p)
         elif d in names and not installed(next(e for e in entries() if e["folder"] == d), home):
             _rmtree(p)
-
-
-def unpacked_bytes(wheel):
-    """Bytes the install writes (after the filter)."""
-    with zipfile.ZipFile(wheel) as z:
-        return sum(i.file_size for i in z.infolist() if not i.is_dir() and not skipped(i.filename))
 
 
 def install(entry, wheel, progress=None, cancel=None, home=None, delete_wheel=False):

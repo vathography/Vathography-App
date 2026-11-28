@@ -2,7 +2,8 @@
 # Licensed under AGPL-3.0-only with additional permissions under its section 7: see LICENSE.
 r"""photo_io.py: reading photos and writing depth files.
 
-Reads through PyAV (FFmpeg), because PIL differs by up to 54 levels on 4:2:0 JPEGs; mirrored EXIF orientations are not
+Reads through PyAV (FFmpeg), because PIL's JPEG decode differs from FFmpeg's, the decode the ComfyUI node uses, by up to
+54 levels on 4:2:0 JPEGs; mirrored EXIF orientations are not
 applied, rotations are. Writes 16-bit PNG (clamped, truncated) and EXR (linear, float or half), + the app's depth tag:
 PNG tEXt chunk / EXR string attribute `vathography` = `raw-depth`, so the Relief tab knows an app depth map from an
 add-on export.
@@ -14,6 +15,7 @@ from fractions import Fraction
 
 import av
 import numpy as np
+
 
 TAG_KEY, TAG_VALUE = "vathography", "raw-depth"
 EXR_MAGIC = b"\x76\x2f\x31\x01"
@@ -266,16 +268,3 @@ def encode_depth(depth01, kind, tagged=True):
         data = tag_png(data) if kind.startswith("png") else tag_exr(data)
     return data
 
-
-def write_depth(path, depth01, kind, tagged=True):
-    """One file at an exact name, never over an existing file (FileExistsError). Crash-safe: <path>.tmp, then
-    os.rename (Windows refuses an existing target). The app's outputs go through write_versioned instead."""
-    tmp = path + ".tmp"
-    with open(tmp, "wb") as f:
-        f.write(encode_depth(depth01, kind, tagged))
-    try:
-        os.rename(tmp, path)
-    except OSError:
-        os.remove(tmp)
-        raise
-    return path

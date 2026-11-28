@@ -28,24 +28,12 @@ def manifest():
     return json.load(open(models.MANIFEST, encoding="utf-8"))
 
 
-def third_party():
-    """The manifest's `third_party` entries (PyTorch, OpenCV). ⛔ Never part of `files`: those are the models."""
-    return manifest().get("third_party", [])
-
-
 def is_third_party(entry):
     return "url" in entry
 
 
 def source_url(entry):
     return entry["url"] if is_third_party(entry) else URL.format(**entry)
-
-
-def hosted(entry):
-    """False for a model whose repo is not online (a '(' in its repo or revision); a third-party URL is always hosted."""
-    if is_third_party(entry):
-        return True
-    return "(" not in entry["repo"] and "(" not in entry["revision"]
 
 
 def entries_for(model):
@@ -125,8 +113,6 @@ def fetch(entry, dest_dir, progress=None, cancel=None, timeout=60):
     progress(done_bytes, total_bytes); cancel = a threading.Event (the .part is kept for the next resume).
     A third-party wheel already finished with the right hash is returned as it is (a crash after the fetch re-downloads
     nothing); the models' path is unchanged."""
-    if not hosted(entry):
-        raise RuntimeError(f"{os.path.basename(entry['path'])} is not online yet.")
     dst = target(dest_dir, entry)
     part = dst + ".part"
     os.makedirs(dest_dir, exist_ok=True)

@@ -2,7 +2,7 @@
 # Licensed under AGPL-3.0-only with additional permissions under its section 7: see LICENSE.
 r"""pipeline.py — the depth pipeline of node 1.3.0 without ComfyUI: `run_pipeline` is copied from the pinned
 1.3.0 nodes.py (lines 23-92), so the app runs the node's orchestration on the node's engine (vathography_app/engine =
-byte copies; same inputs -> the same map, 0.0). Two app-only departures: GLOBAL_COVER_MIN (both models, photos the
+the node's engine; its changes are listed in engine/ENGINE_SOURCE.json). Two app-only departures: GLOBAL_COVER_MIN (both models, photos the
 global pass already covers ~1:1 skip the tiles) and the sky repair (sky=True).
 """
 import time
@@ -19,29 +19,29 @@ TILE = 1536                    # = nodes.TILE (1.3.0: the only tile size; smalle
 GLOBAL_COVER_MIN = 0.865
 
 
-def _sky(S, G, plan, tp, rows, photo, infer, merge_device, stage, log, chunk, limit, warn, info, scaled=True):
+def _sky(S, G, plan, tp, rows, photo, infer, merge_device, stage, log, chunk, warn, info):
     stage("checking the sky")
     try:
         from . import sky_repair
-        res = sky_repair.repair(S, G, plan, tp, rows, photo, infer, merge_device, stage, log, chunk=chunk, limit=limit, scaled=scaled)
+        res = sky_repair.repair(S, G, plan, tp, rows, photo, infer, merge_device, stage, log, chunk=chunk)
         info["sky"] = res[1] if res is not None else dict(flagged=[])
         return res[0] if res is not None else S
     except Exception as e:                           # a GPU out-of-memory lands here too
-        import torch
+        from . import device
         log(f"[sky_repair] FAILED, the photo keeps the unrepaired map: {type(e).__name__}: {e}\n{traceback.format_exc()}")
         info["sky"] = dict(failed=f"{type(e).__name__}: {e}")
-        torch.cuda.empty_cache()
+        device.empty_cache(merge_device)
         if warn:
             warn(f"The sky repair stopped ({type(e).__name__}); this photo keeps its depth map without it.")
         return S
 
 
 def run_pipeline(photo, infer, tile=TILE, log=print, progress=None, merge_device="cpu", m1_budget=TC.M1_BUDGET_MP,
-                 recipe="depth", stage=None, sky=False, sky_chunk=None, sky_limit=None, warn=None, sky_scaled=True):
+                 recipe="depth", stage=None, sky=False, sky_chunk=None, warn=None):
     """stage(name, done=None, total=None): the step names, each sent BEFORE its call; None =
     silent. Progress only: no value here depends on it.
     sky=True: the sky repair after the merge (default off: only the app's CLI turns it on). sky_chunk = frames per model
-    run, sky_limit = most frames for one photo, warn(msg) = one line for the user when the repair fails. A failed repair
+    run, warn(msg) = one line for the user when the repair fails. A failed repair
     never costs the map: the photo keeps the unrepaired one."""
     staged = stage is not None
     stage = stage or (lambda *a, **k: None)
@@ -84,7 +84,7 @@ def run_pipeline(photo, infer, tile=TILE, log=print, progress=None, merge_device
             f"achieved overlap {plan['achieved_overlap_x']:.0f} / {plan['achieved_overlap_y']:.0f} px")
 
     t0 = time.time()
-    preds = infer(inputs, progress, stage) if staged else infer(inputs, progress)    # a0_engine's stand-in takes two
+    preds = infer(inputs, progress, stage) if staged else infer(inputs, progress)    # an infer without stages takes two
     info["infer_s"] = round(time.time() - t0, 1)
     assert len(preds) == len(inputs), (len(preds), len(inputs))
     del inputs
@@ -123,7 +123,7 @@ def run_pipeline(photo, infer, tile=TILE, log=print, progress=None, merge_device
         log(f"[tiled] merge r{TC.RADIUS} on {merge_device}: {minfo['levels']} levels, residual {minfo['residual_px']} px | "
             f"range {S.min():.4f}..{S.max():.4f}")
         if sky:
-            S = _sky(S, G, plan, tp, rows, photo, infer, merge_device, stage, log, sky_chunk, sky_limit, warn, info, sky_scaled)
+            S = _sky(S, G, plan, tp, rows, photo, infer, merge_device, stage, log, sky_chunk, warn, info)
         del tp
     stage("finishing the map")
     out, sinfo = TC.stretch_near_bright(S)

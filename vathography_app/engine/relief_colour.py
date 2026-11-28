@@ -177,48 +177,6 @@ def fit_curve(lab):
     return poly
 
 
-def relief_colour(rgb, sigma_r, source, device="cpu", tick=None):
-    """rgb float32 [H, W, 3] as loaded (PNG: sRGB values, EXR: linear) -> (rgb float32 [H, W, 3] in the same
-    encoding, info). The relief follows the picture's colour ramp; far off one ramp -> relief on its brightness."""
-    if source == RL.SOURCES[2]:
-        raise ValueError("'Raw depth map' takes a grey depth map; for a colour export set 'input' to the export's "
-                         "format (PNG or EXR)")
-    if source not in RL.SOURCES:
-        raise ValueError(f"unknown input type {source!r}; choose one of {RL.SOURCES}")
-    H, W, _ = rgb.shape
-    x = torch.from_numpy(np.ascontiguousarray(rgb)).to(device=device, dtype=torch.float64).reshape(-1, 3)
-    lin = x if source == RL.SOURCES[0] else torch.from_numpy(RL.eotf_srgb_ext(rgb).reshape(-1, 3)).to(x)
-    with torch.no_grad():
-        lab = to_oklab(lin)
-        poly = fit_curve(lab.float()).double()
-        t, dist = _project(lab, poly)
-    off_share = float((dist > OFF_DIST).double().mean())
-    info = dict(path="curve", off_share=off_share, curve_len=float((poly[1:] - poly[:-1]).norm(dim=1).sum()))
-    if off_share > OFF_SHARE_MAX:
-        return _relief_brightness(lin, H, W, sigma_r, source, device, tick, info)
-    t_np = t.reshape(H, W).float().cpu().numpy()
-    r, rinfo = RL.reshape(t_np, sigma_r, device=device, tick=tick)
-    r, rinfo["levels_kept"] = RL.keep_levels(r, t_np)
-    info.update(rinfo)
-    with torch.no_grad():
-        tn = torch.from_numpy(r.reshape(-1)).to(lab)
-        out_lin = from_oklab(lab + _at(poly, tn) - _at(poly, t))
-    return _encode(out_lin, H, W, source, info)
-
-
-def _relief_brightness(lin, H, W, sigma_r, source, device, tick, info):
-    """Fallback: the relief on the picture's brightness (sRGB of linear luminance), colours scaled with it."""
-    info["path"] = "brightness"
-    Y = (lin @ _LUMA.to(lin)).clamp(min=0)
-    disp = RL.oetf_srgb_ext(Y.reshape(H, W).cpu().numpy())
-    r, rinfo = RL.reshape(disp, sigma_r, device=device, tick=tick)
-    r, rinfo["levels_kept"] = RL.keep_levels(r, disp)
-    info.update(rinfo)
-    Yn = torch.from_numpy(RL.eotf_srgb_ext(r).reshape(-1)).to(lin)
-    gain = Yn / Y.clamp(min=1e-4)
-    return _encode(lin * gain[:, None], H, W, source, info)
-
-
 def _encode(out_lin, H, W, source, info):
     out_lin = out_lin.reshape(H, W, 3).float().cpu().numpy()
     if source == RL.SOURCES[0]:

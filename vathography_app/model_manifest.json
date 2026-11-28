@@ -53,7 +53,7 @@
    "path": "marigold_v2_depth_log_stage2.safetensors",
    "size": 1703764632,
    "sha256": "ec1f5649eef5ddb487b4de2222f6b62837f094c02d652843bd4fceb481037ca0",
-   "note": "built from the original Apache-2.0 sources (v2_build.py); byte-identical to the Comfy-Org file"
+   "note": "byte-identical copy of the Comfy-Org/marigold-v2-0 file (Apache-2.0)"
   },
   {
    "role": "vae",
@@ -63,7 +63,7 @@
    "path": "marigold_v2_depth_log_stage2_vae.safetensors",
    "size": 253806278,
    "sha256": "0c1a95f7410678a93b59ba42b3a069f50b54ff9f6e35525699eb8fcd63ce332c",
-   "note": "built from the original Apache-2.0 sources (v2_build.py); byte-identical to the Comfy-Org file"
+   "note": "byte-identical copy of the Comfy-Org/marigold-v2-0 file (Apache-2.0)"
   },
   {
    "role": "conditioning",
@@ -73,10 +73,10 @@
    "path": "marigold_v2_depth_conditioning.safetensors",
    "size": 2422904,
    "sha256": "9f5c00a2df993136c541cdbc37bcfb81ab1ba81adaec25bfb9cbfff81edd7c9c",
-   "note": "built from the original Apache-2.0 sources (v2_build.py); byte-identical to the Comfy-Org file"
+   "note": "byte-identical copy of the Comfy-Org/marigold-v2-0 file (Apache-2.0)"
   }
  ],
- "rule": "every file is checked against its sha256 after download; a local models folder is accepted only when every hash matches",
+ "rule": "every file is checked against its sha256 after download; a local models folder is checked against every sha256 when it is first chosen, then by name and size",
  "third_party": [
   {
    "name": "PyTorch",
@@ -104,6 +104,36 @@
    "size": 40070414,
    "unpacked_size": 85167638,
    "sha256": "77a82fe35ddcec0f62c15f2ba8a12ecc2ed4207c17b0902c7a3151ae29f37fb6",
+   "folder": "opencv-4.13.0.92"
+  }
+ ],
+ "third_party_macos": [
+  {
+   "name": "PyTorch",
+   "package": "torch",
+   "module": "torch",
+   "version": "2.10.0",
+   "publisher": "PyPI",
+   "licence": "BSD-3-Clause; the libraries inside it (LLVM OpenMP and others) under their own licences",
+   "url": "https://files.pythonhosted.org/packages/5b/30/bfebdd8ec77db9a79775121789992d6b3b75ee5494971294d7b4b7c999bc/torch-2.10.0-2-cp310-none-macosx_11_0_arm64.whl",
+   "file": "torch-2.10.0-2-cp310-none-macosx_11_0_arm64.whl",
+   "size": 79411457,
+   "unpacked_size": 339735070,
+   "sha256": "2b980edd8d7c0a68c4e951ee1856334a43193f98730d97408fbd148c1a933313",
+   "folder": "torch-2.10.0"
+  },
+  {
+   "name": "OpenCV",
+   "package": "opencv-python-headless",
+   "module": "cv2",
+   "version": "4.13.0.92",
+   "publisher": "PyPI",
+   "licence": "Apache-2.0; the libraries inside it (FFmpeg built with the GPL option, x264, x265 and others) under their own licences",
+   "url": "https://files.pythonhosted.org/packages/79/42/2310883be3b8826ac58c3f2787b9358a2d46923d61f88fedf930bc59c60c/opencv_python_headless-4.13.0.92-cp37-abi3-macosx_13_0_arm64.whl",
+   "file": "opencv_python_headless-4.13.0.92-cp37-abi3-macosx_13_0_arm64.whl",
+   "size": 46247192,
+   "unpacked_size": 124561174,
+   "sha256": "1a7d040ac656c11b8c38677cc8cccdc149f98535089dbe5b081e80a4e5903209",
    "folder": "opencv-4.13.0.92"
   }
  ]

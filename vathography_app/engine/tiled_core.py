@@ -6,10 +6,7 @@ import os
 import numpy as np
 import torch
 
-try:
-    from . import imageops as IO                           # inside the pack
-except ImportError:
-    import imageops as IO
+from . import imageops as IO
 
 try:
     from kornia.geometry.transform import pyrdown, pyrup
@@ -25,7 +22,7 @@ OVERLAP = 512
 RADIUS = 32
 TILE_STRIP = 512               # decoy strip on the right of every tile
 TILE_DECOY_SCALE = 3.5
-M1_STRIP = 384                 # decoy strip on the right of the M1 (global) input
+M1_STRIP = 384                 # decoy strip on the right of the global input
 M1_DECOY_SCALE = 2.5
 M1_BUDGET_MP = 3.2
 M1_MAX_LONG_EDGE = 2048        # largest long edge tried for the global grid
@@ -78,7 +75,7 @@ def make_plan(W, H, tile, overlap=OVERLAP):
     ys, ovy = plan_axis(H, tile, overlap)
     tiles = [dict(name=f"tile_r{j}_c{i}", i=i, j=j, x0=x, y0=y, x1=x + tile, y1=y + tile)
              for j, y in enumerate(ys) for i, x in enumerate(xs)]
-    return dict(canvas=[W, H], tile=tile, overlap_widget=overlap, cols=len(xs), rows=len(ys),
+    return dict(canvas=[W, H], tile=tile, overlap_min=overlap, cols=len(xs), rows=len(ys),
                 starts_x=xs, starts_y=ys, achieved_overlap_x=ovx, achieved_overlap_y=ovy, tiles=tiles)
 
 
@@ -150,7 +147,7 @@ def apply_quantile_map(p, kt, kg):
 
 
 def huber_affine(p, g, valid):
-    from scipy.optimize import least_squares            # scipy ships with ComfyUI core
+    from scipy.optimize import least_squares
     tv, gv = p[valid][::7], g[valid][::7]
     a0, b0 = np.polyfit(tv, gv, 1)
     res = least_squares(lambda x: x[0] * tv + x[1] - gv, x0=[a0, b0], loss="huber", f_scale=0.05)
@@ -194,7 +191,7 @@ def ramp_weights(tile, has_prev, has_next, ov_prev, ov_next):
 
 # ----------------------------------------------------------------------------- global, mosaic, merge, stretch
 def global_from_m1(m1, W, H):
-    """G = the M1 prediction (strip already cropped) resized to the canvas, cubic (= OpenCV INTER_CUBIC)."""
+    """G = the global prediction (strip already cropped) resized to the canvas, cubic (= OpenCV INTER_CUBIC)."""
     return IO.resize_cubic_f32(m1.astype(np.float32), W, H)
 
 

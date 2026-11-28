@@ -3,13 +3,13 @@
 r"""gui.py — the Vathography App window (tkinter + tkinterdnd2).
 The window never imports torch: the work runs in ONE worker process per batch = `python -m vathography_app depth|relief
 ... --progress-json` (the CLI path), read line by line. Cancel ends the worker (the GPU is freed at once;
-the .tmp of the photo in progress is deleted). GPU / RAM / disk checks without torch (nvidia-smi, Win32).
-House rule: no always-on hint lines; a sentence appears only on a problem.
+the .tmp of the photo in progress is deleted). GPU / RAM / disk checks without torch (Windows: nvidia-smi + Win32;
+macOS: sysctl).
+The window shows a message line only when something needs attention.
 """
 import ctypes
 import json
 import os
-import platform
 import queue
 import shutil
 import subprocess
@@ -21,25 +21,27 @@ import webbrowser
 from tkinter import filedialog, ttk
 from tkinter import font as tkfont
 
-from . import __version__, cli, download, models, outnames, third_party
+from . import __version__, cli, download, models, outnames, platform_io, third_party
 
 APP_NAME = "Vathography App"
 PKG_DIR = os.path.dirname(os.path.abspath(__file__))
 PKG_PARENT = os.path.dirname(PKG_DIR)
 APP_HOME = models.APP_HOME          # the portable package = <APP_HOME>\app\vathography_app ; the dev repo = <APP_HOME>
+INSTALL_HOME = models.INSTALL_HOME  # the app's own files (= APP_HOME on Windows; APP_HOME = Application Support in a Mac bundle)
 SETTINGS = os.path.join(APP_HOME, "settings.json")
 RUN_LOG = os.path.join(APP_HOME, "last_run.log")
 DEFAULT_MODELS = models.DEFAULT_DIR                     # beside the app
 ICON = os.path.join(PKG_DIR, "assets", "vathography_app.ico")
-# the notices shipped beside the app (packaging\NOTICE.txt in the dev repo)
-NOTICE = next((p for p in (os.path.join(APP_HOME, "NOTICE.txt"), os.path.join(APP_HOME, "packaging", "NOTICE.txt"))
-               if os.path.isfile(p)), os.path.join(APP_HOME, "NOTICE.txt"))
+# the notices shipped beside the app (in the source tree: packaging\NOTICE.txt, on macOS packaging/macos/NOTICE.txt)
+NOTICE = next((p for p in (os.path.join(INSTALL_HOME, "NOTICE.txt"),
+                           os.path.join(INSTALL_HOME, "packaging", *(["macos"] if platform_io.IS_MAC else []), "NOTICE.txt"))
+               if os.path.isfile(p)), os.path.join(INSTALL_HOME, "NOTICE.txt"))
 BUDGET_MIN = 4.6            # GiB: one input per weight pass (backend BASE 3.9 + MARGIN 0.7); measured on a 6 GB card
-BUDGET_MAX = 6.5            # GiB: = BUDGET_MIN, the budget is fixed (measured: no speed gain above 6.5)
+BUDGET_MAX = 6.5            # GiB: the budget the app uses (measured: no speed gain above 6.5)
 RAM_WARN_GB = 16
 MIN_CC = 8.0                # Ampere: torch 2.10 cu128 + the measured cards
 
-# the brand = the Vathography site's DARK theme (website css/style.css :root[data-theme="dark"]) + its fonts as Windows
+# the brand = the Vathography site's dark theme (vathography.com) + its fonts as Windows
 # renders them (--serif -> Palatino Linotype, --sans -> Segoe UI; both ship with Windows).
 MASTHEAD = "Vathography App"
 ISSUES_URL = "https://github.com/vathography/Vathography-App/issues"
@@ -47,11 +49,11 @@ BG, BG_ALT, SURFACE = "#121110", "#191715", "#1d1b19"
 TEXT, TEXT_SOFT, TEXT_FAINT = "#eeebe6", "#b3aca2", "#837c72"
 LINE, ACCENT, ACCENT_SOFT, ON_ACCENT = "#2e2b27", "#d8ac4d", "#3a3020", "#1b1a18"
 TAB_BACK, TAB_DISABLED = "#0b0a09", "#4a4540"   # an unselected tab (behind the window) · a tab with nothing to show
-SERIF, SANS = "Palatino Linotype", "Segoe UI"
+SERIF, SANS, MONO = platform_io.fonts()   # Windows: Palatino Linotype, Segoe UI, Consolas; macOS: Palatino, Helvetica Neue, Menlo
 COMBO_WIDTH = 44            # characters: the longest choice + room for a chosen folder's path
 BESIDE, CHOOSE = "Next to each photo", "Choose a folder…"
 BESIDE_FILE = "Next to each file"                       # the Relief tab's inputs are depth maps, not photos
-# Output, highest precision first (user 2026-10-31; a 0..1 depth map: 16-bit PNG step 1.5e-5 < half EXR 2.4e-4 near
+# Output, highest precision first (a 0..1 depth map: 16-bit PNG step 1.5e-5 < half EXR 2.4e-4 near
 # 1.0, measured); the first one is the default. Value = the CLI's --format.
 OUTPUTS = (("exr32", "32-bit EXR"), ("png16", "16-bit PNG"), ("exr16", "16-bit EXR"), ("png8", "8-bit PNG"))
 REMOVE_MARK = "✕"          # the last column of a row: click = that row out of the list
@@ -123,31 +125,26 @@ def save_settings(d):
 
 
 def gpu_info():
-    """-> dict(name, total_gib, free_gib, cc) of GPU 0, or None (no NVIDIA driver)."""
+    """-> dict(name, total_gib, free_gib, cc) of GPU 0, or None (no NVIDIA driver; always None on a Mac)."""
+    if platform_io.IS_MAC:
+        return None
     exe = shutil.which("nvidia-smi") or r"C:\Windows\System32\nvidia-smi.exe"
     try:
         r = subprocess.run([exe, "--query-gpu=name,memory.total,memory.free,compute_cap", "--format=csv,noheader,nounits"],
-                           capture_output=True, text=True, timeout=15, creationflags=subprocess.CREATE_NO_WINDOW)
+                           capture_output=True, text=True, timeout=15, **platform_io.no_window())
         name, total, free, cc = [x.strip() for x in r.stdout.strip().splitlines()[0].split(",")]
         return dict(name=name, total_gib=float(total) / 1024, free_gib=float(free) / 1024, cc=float(cc))
     except Exception:
         return None
 
 
-def ram_gb():
-    class MS(ctypes.Structure):
-        _fields_ = [("dwLength", ctypes.c_ulong), ("dwMemoryLoad", ctypes.c_ulong), ("ullTotalPhys", ctypes.c_ulonglong),
-                    ("ullAvailPhys", ctypes.c_ulonglong), ("ullTotalPageFile", ctypes.c_ulonglong),
-                    ("ullAvailPageFile", ctypes.c_ulonglong), ("ullTotalVirtual", ctypes.c_ulonglong),
-                    ("ullAvailVirtual", ctypes.c_ulonglong), ("ullAvailExtendedVirtual", ctypes.c_ulonglong)]
-    m = MS()
-    m.dwLength = ctypes.sizeof(MS)
-    ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(m))
-    return m.ullTotalPhys / 1e9
+ram_gb = platform_io.ram_gb
 
 
 def preflight():
     """-> (budget_gib or None, [sentences]). None = cannot run."""
+    if platform_io.IS_MAC:
+        return preflight_mac()
     g = gpu_info()
     if g is None:
         return None, ["No NVIDIA graphics card was found (or its driver is missing). The app needs one."]
@@ -163,11 +160,23 @@ def preflight():
     return round(budget, 1), notes
 
 
-def worker_python():
-    exe = sys.executable
-    if os.path.basename(exe).lower() == "pythonw.exe":
-        exe = os.path.join(os.path.dirname(exe), "python.exe")
-    return exe
+def preflight_mac():
+    """Apple silicon + macOS 14. Memory is unified (graphics and system share it): no free-VRAM test; the budget =
+    BUDGET_MAX (it sizes the groups of inputs per weight pass). Tested on a 24 GB Mac: below 24 GB a note, never a
+    refusal."""
+    why = platform_io.mac_problem()
+    if why:
+        return None, [why]
+    notes = []
+    try:
+        if ram_gb() < 23:
+            notes.append(f"This Mac has {ram_gb():.0f} GB of memory; the app may be slow or fail below 24 GB.")
+    except Exception:
+        pass
+    return BUDGET_MAX, notes
+
+
+worker_python = platform_io.worker_python
 
 
 # ---------------------------------------------------------------- the worker (one process per batch)
@@ -188,7 +197,7 @@ class Worker:
             self.p = subprocess.Popen([worker_python(), "-E", "-s", "-u", "-m", "vathography_app"] + args + ["--progress-json"],
                                       cwd=PKG_PARENT, env=env, stdout=subprocess.PIPE, stderr=self.log,
                                       text=True, encoding="utf-8", errors="replace",
-                                      creationflags=subprocess.CREATE_NO_WINDOW)
+                                      **platform_io.no_window())
         except OSError:
             self.log.close()
             raise
@@ -285,7 +294,7 @@ class App:
                                     ("Base depth map", "Accentuated Relief"))
         self._depth_options(self.tab_depth)
         self._relief_options(self.tab_relief)
-        self._tab_now = self.tab_depth                  # one divider position for both pages (user 2026-11-11)
+        self._tab_now = self.tab_depth                  # one divider position for both pages
         nb.bind("<<NotebookTabChanged>>", self._tab_changed, add="+")
 
         # the line under the list: errors and warnings only (progress is written on the photo's own row, never here,
@@ -314,7 +323,7 @@ class App:
         f.kind = kind
         f.columnconfigure(0, weight=1)
         f.rowconfigure(0, weight=1)
-        # list | preview with a draggable divider between them (user 2026-11-11: one handle on the EDGE resizes both;
+        # list | preview with a draggable divider between them (one handle on the EDGE resizes both;
         # the list's own column handle is switched off below)
         paned = ttk.PanedWindow(f, orient="horizontal")
         paned.grid(row=0, column=0, sticky="nsew")
@@ -337,7 +346,7 @@ class App:
         tree.heading("#0", text=drop_text)
         tree.heading("status", text="")
         tree.heading("remove", text="")
-        # widths are set by _layout (Issue ID 2026-10-31 b): status = as wide as its text, the name gets the rest
+        # widths are set by _layout: status = as wide as its text, the name gets the rest
         tree.column("#0", width=360, minwidth=60, stretch=False)
         tree.column("status", width=4, minwidth=4, anchor="w", stretch=False)
         tree.column("remove", width=34, minwidth=34, anchor="center", stretch=False)
@@ -358,7 +367,7 @@ class App:
         right = ttk.Frame(paned, padding=(5, 0, 0, 0))
         self._preview_pane(f, right, pv_titles).pack(fill="both", expand=True)
         paned.add(right, weight=1)
-        # the divider is dragged by our own handlers: it stops where the buttons under the list touch (user 2026-11-11)
+        # the divider is dragged by our own handlers: it stops where the buttons under the list touch
         f.sash_drag = None
         paned.bind("<ButtonPress-1>", lambda e, f=f: self._sash_press(f, e))
         paned.bind("<B1-Motion>", lambda e, f=f: self._sash_motion(f, e))
@@ -392,7 +401,7 @@ class App:
             lab.pack(fill="both", expand=True)
             box.bind("<Configure>", lambda e, f=f: self._pv_fit_later(f))
             # the INPUT preview takes drops (photos in, like the list); the OUTPUT preview is dragged out (its file into
-            # Blender, a folder, …). User 2026-10-31: the estimated map is what leaves, the photograph is what comes in.
+            # Blender, a folder, …): the estimated map is what leaves, the photograph is what comes in.
             if TkinterDnD is not None and k == 0:
                 for w in (box, lab):
                     w.drop_target_register(DND_FILES)
@@ -440,7 +449,7 @@ class App:
             suffix = "_depth_see_through" if self.model.get() == "see-through" else "_depth"
             found = outnames.latest_outputs(d, f"{stem}{suffix}")
         else:
-            n = int(self.level.get())                    # + a relief from before the 2026-10-31 rename (= version 0)
+            n = int(self.level.get())                    # + a relief with the earlier name (= version 0)
             found = outnames.latest_outputs(d, f"{stem}_relief_strength{n}", aliases=(f"{stem}_relief_level{n}",))
             found = [p for p in found if p.lower().endswith(ext.lower())]
         return [p for p in found if os.path.splitext(p)[1].lower() in (".png", ".exr")]
@@ -631,7 +640,7 @@ class App:
     def _sash_set(self, f, pos):
         """Place the divider, never left of where the buttons under the list touch (they keep their size)."""
         # and never so far right that the preview's two tab titles are cut: past that ttk hides the preview pane
-        # entirely and a wider window then goes to the list only (found 2026-11-11)
+        # entirely and a wider window then goes to the list only
         tabs = self._pv_tabs_width(f)
         if tabs:
             pos = min(int(pos), f.paned.winfo_width() - 6 - 5 - tabs)   # 6 = divider, 5 = preview side's padding
@@ -682,7 +691,7 @@ class App:
         self._sash_set(new, pos)
 
     def _tree_motion(self, f, e):
-        # the column widths are the app's (_layout): no resize cursor on the heading's column edges (user 2026-11-11)
+        # the column widths are the app's (_layout): no resize cursor on the heading's column edges
         if f.tree.identify_region(e.x, e.y) == "separator":
             f.tree.configure(cursor="")
             return "break"
@@ -798,7 +807,9 @@ class App:
         return s
 
     def _gpu_sentence(self):
-        """'' = this computer has a card the app can use; else why not (before 2.9 GB are downloaded for nothing)."""
+        """'' = this computer can run the app; else why not (checked before anything is downloaded)."""
+        if platform_io.IS_MAC:
+            return platform_io.mac_problem() or ""
         g = gpu_info()
         if g is None:
             return ("This computer has no NVIDIA graphics card the app can use, or its driver is missing, so the app "
@@ -830,8 +841,7 @@ class App:
         """None when the drive of third_party\\ has room for the wheels + their unpacked files (+ the models still to
         download, when they go to the same drive), else a sentence."""
         unpacked = sum(e["unpacked_size"] for e in miss)
-        same = (os.path.splitdrive(os.path.abspath(self.models_dir))[0].lower()
-                == os.path.splitdrive(os.path.abspath(third_party.HOME))[0].lower())
+        same = platform_io.same_volume(self.models_dir, third_party.HOME)
         models_left = download.bytes_needed(self.models_dir, download.missing(self.models_dir, ["depth", "see-through"])) if same else 0
         return download.check_space(third_party.HOME, miss, extra=unpacked + models_left,
                                     what="PyTorch, OpenCV and the models" if models_left else "PyTorch and OpenCV")
@@ -916,7 +926,7 @@ class App:
         box = tk.Frame(parent, bg=BG)
         box.pack(fill="both", expand=True, padx=12, pady=(12, 6))
         t = tk.Text(box, bg=SURFACE, fg=TEXT, insertbackground=TEXT, relief="flat", bd=0, wrap="none",
-                    font=("Consolas", 9), padx=8, pady=6, selectbackground=ACCENT_SOFT, selectforeground=TEXT)
+                    font=(MONO, 9), padx=8, pady=6, selectbackground=ACCENT_SOFT, selectforeground=TEXT)
         sy = ttk.Scrollbar(box, orient="vertical", command=t.yview)
         sx = ttk.Scrollbar(box, orient="horizontal", command=t.xview)
         t.configure(yscrollcommand=sy.set, xscrollcommand=sx.set)
@@ -930,21 +940,24 @@ class App:
     def troubleshooting_text(self):
         """What we need to help: the app, the machine, the settings, then the last run's log, exactly as written."""
         g = gpu_info()
-        try:
-            r = subprocess.run([shutil.which("nvidia-smi") or r"C:\Windows\System32\nvidia-smi.exe",
-                                "--query-gpu=driver_version", "--format=csv,noheader"], capture_output=True, text=True,
-                               timeout=15, creationflags=subprocess.CREATE_NO_WINDOW)
-            driver = r.stdout.strip().splitlines()[0]
-        except Exception:
-            driver = "?"
+        driver = "?"
+        if g:
+            try:
+                r = subprocess.run([shutil.which("nvidia-smi") or r"C:\Windows\System32\nvidia-smi.exe",
+                                    "--query-gpu=driver_version", "--format=csv,noheader"], capture_output=True, text=True,
+                                   timeout=15, **platform_io.no_window())
+                driver = r.stdout.strip().splitlines()[0]
+            except Exception:
+                pass
         try:
             ram = f"{ram_gb():.0f} GB"
         except Exception:
             ram = "?"
         lines = [f"{APP_NAME} {__version__}",
-                 f"Windows: {platform.platform()}",
+                 platform_io.os_line(),
                  (f"Graphics card: {g['name']} | {g['total_gib']:.1f} GB, {g['free_gib']:.1f} GB free | "
-                  f"compute {g['cc']} | driver {driver}") if g else "Graphics card: no NVIDIA card found",
+                  f"compute {g['cc']} | driver {driver}") if g else
+                 (f"Chip: {platform_io.chip_name() or '?'}" if platform_io.IS_MAC else "Graphics card: no NVIDIA card found"),
                  f"Memory: {ram}",
                  f"Models folder: {self.models_dir} (found: "
                  f"{', '.join(m for m in ('depth', 'see-through') if self.models_ok(m)) or 'none'})",
@@ -977,7 +990,7 @@ class App:
         def copy():
             self.root.clipboard_clear()
             self.root.clipboard_append(text)
-            self.root.update()                           # hand it to Windows now: it stays after the app closes
+            self.root.update()                           # hand it to the system clipboard now: it stays after the app closes
             note.set("Copied. Paste it into your message.")
 
         def save():
@@ -992,7 +1005,7 @@ class App:
         ttk.Button(row, text="Close", command=top.destroy).pack(side="right")
         ttk.Button(row, text="Save as…", command=save).pack(side="right", padx=4)
         ttk.Button(row, text="Copy all", command=copy, style="Accent.TButton").pack(side="right")
-        top.copy, top.save, top.note = copy, save, note  # (the window check calls them)
+        top.copy, top.save, top.note = copy, save, note  # reachable from the window object
         return top
 
     def show_about(self):
@@ -1004,6 +1017,8 @@ class App:
         link = tk.Label(head, text="vathography.com", bg=BG, fg=ACCENT, font=(SANS, 10, "underline"), cursor="hand2")
         link.pack(pady=(2, 0))
         link.bind("<Button-1>", lambda e: webbrowser.open("https://vathography.com"))
+        tk.Label(head, text="By Karim Joseph Nassar, developed with Claude Code.", bg=BG, fg=TEXT_SOFT,
+                 font=(SANS, 10)).pack(pady=(6, 0))
         try:
             with open(NOTICE, encoding="utf-8") as fh:
                 notice = fh.read()
@@ -1020,7 +1035,7 @@ class App:
         if not d:
             return
         # the check is shown IN the banner, in place of its text, with a clock (also when the banner was hidden: the
-        # gear menu's "Models folder…" with the models present); the line under the list keeps errors only
+        # gear menu's "Set models folder…" with the models present); the line under the list keeps errors only
         self.status.set("")
         total = json.load(open(models.MANIFEST, encoding="utf-8"))["total_download_bytes"]   # what a full check reads
         self.check = dict(t0=time.time(), done=0, total=total, last=0.0)
@@ -1073,16 +1088,8 @@ class App:
 
     def start_download(self):
         need = download.missing(self.models_dir, ["depth", "see-through"])
-        offline = [e for e in need if not download.hosted(e)]
-        if offline:
-            self.status.set("Some model files are not online yet: " +
-                            ", ".join(os.path.basename(e["path"]) for e in offline) + ".")
-            need = [e for e in need if download.hosted(e)]
-            if not need:
-                return
         tp = self.tp_missing()                          # PyTorch + OpenCV still to come onto the same drive
-        same = (os.path.splitdrive(os.path.abspath(self.models_dir))[0].lower()
-                == os.path.splitdrive(os.path.abspath(third_party.HOME))[0].lower())
+        same = platform_io.same_volume(self.models_dir, third_party.HOME)
         tp_left = (download.bytes_needed(third_party.HOME, tp) + sum(e["unpacked_size"] for e in tp)) if (tp and same) else 0
         msg = download.check_space(self.models_dir, need, extra=tp_left,
                                    what="the models, PyTorch and OpenCV" if tp_left else "the models")
@@ -1237,9 +1244,10 @@ class App:
         """A stage event -> the head of the current row (photo 0 = loading: the first photo's row). The fast detail
         ('block 37/60 · tile 9/23', 'sample 7 of 16') is not shown: the head and its % only."""
         name = ev["name"]
+        _phase_times(j, name, ev.get("done"), ev.get("total"), time.time())
         j["head"] = _stage_row(name)
         j["passes"] = name.startswith(_PASS_STAGES)
-        j["own"] = f"{100 * ev['done'] // ev['total']} %" if ev.get("total") else ""
+        j["own"] = f"{100 * ev['done'] // ev['total']} %" if (ev.get("total") or 0) > 1 else ""   # 1 item: no "0 %"
         self._render()
 
     def cancel(self):
@@ -1250,7 +1258,7 @@ class App:
             self.worker.cancel()
 
     def _remove_tmp(self, path):
-        """A worker ended mid-write leaves <output>.tmp (photo_io.write_depth: temp + os.replace)."""
+        """A worker ended mid-write leaves <output>.tmp (outnames.write_versioned: <name>.tmp, then safe_rename)."""
         stem = os.path.splitext(os.path.basename(path))[0]
         d = self.job["out"] or os.path.dirname(os.path.abspath(path))
         try:
@@ -1285,21 +1293,23 @@ class App:
         elif k == "photo":
             j["current"] = ev["i"]
             j["n"] = ev["n"]
-            j.pop("s0", None)
+            for key in ("s0", "n_in", "enc_t0", "enc_s", "blk_t0", "dec_t0"):   # dec_s (the run's last decode) is kept
+                j.pop(key, None)
             j.update(pct="", eta="", passes=False, own="", head="starting…" if f.kind == "depth" else "working…")
             if ev["i"] != j.get("row"):                 # another photo: its own clock (the first photo keeps the clock from Start)
                 j["row"], j["row_t0"] = ev["i"], time.time()
             self._render()
             f.tree.see(j["items"][ev["i"] - 1])
         elif k == "step":
-            # time left for THIS photo from its own measured step rate, once a third of its steps are done (photos
-            # differ in tile count, so one photo's time says nothing about the next)
+            # time left for THIS photo, once a third of its steps are done (photos differ in tile count, so one photo's
+            # time says nothing about the next): the blocks left at this photo's measured block rate + the decodes
+            # still to come (_seconds_left)
             d, t = ev["done"], ev["total"]
             if "s0" not in j:
                 j["s0"] = time.time()
             eta = ""
             if 3 * d >= t and d < t:
-                sec = (time.time() - j["s0"]) / d * (t - d)
+                sec = _seconds_left(j, d, t, time.time())
                 eta = f"about {max(1, round(sec / 60))} min left" if sec >= 60 else f"about {max(5, round(sec, -1)):.0f} s left"
             j.update(pct=f"{100 * d // t} %", eta=eta)
             self._render()
@@ -1334,8 +1344,47 @@ class App:
 
 
 # the row's part of a stage: up to the first " · " (the fast detail is not shown); in the depth passes the row adds the
-# photo's % and time left from the step events
-_PASS_STAGES = ("encoding tile", "depth pass", "decoding tile")
+# photo's % and time left from the step events. The decode is its own named step (no photo %, no time left): on a Mac
+# it runs on the processor and takes about 80-110 s, which the per-step time left cannot foresee
+_PASS_STAGES = ("encoding tile", "depth pass")
+# a photo's steps (backend.Model._infer): n encodes + the blocks (60 per weight pass) + n decodes, one tick each. The
+# ticks are far from equal (a 3456² photo on a 24 GB Mac: encode ~45 s, block ~18 s, decode ~89 s), so one
+# rate for all of them under-read the time left by the decodes. Until a decode of this run has been
+# timed, one decode is taken as DECODE_PER_ENCODE x this photo's measured encode: on a Mac both run on the processor
+# (decode / encode measured 1.6-2.0 on a Mac); on an NVIDIA card both take seconds.
+DECODE_PER_ENCODE = 2.0
+
+
+def _phase_times(j, name, done, total, now):
+    """Times each phase from the stage events: encode seconds per input (this photo), when the first block started
+    (this photo), the last decode's seconds per input (kept for the whole run: the next photo's first estimate)."""
+    if name.startswith("encoding tile"):
+        j["n_in"] = total
+        if done == 0:
+            j["enc_t0"] = now
+        elif done == total and total and "enc_t0" in j:
+            j["enc_s"] = (now - j["enc_t0"]) / total
+    elif name.startswith("depth pass"):
+        j.setdefault("blk_t0", now)
+    elif name.startswith("decoding tile"):
+        if done == 0:
+            j["dec_t0"] = now
+        elif done == total and total and "dec_t0" in j:
+            j["dec_s"] = (now - j.pop("dec_t0")) / total
+
+
+def _seconds_left(j, d, t, now):
+    """Seconds left for the photo at step d of t: blocks left x the measured block rate + its decodes x the decode
+    estimate. Without the phase times (no stage events seen) one rate over all steps."""
+    n = j.get("n_in")
+    if not n or "enc_s" not in j or "blk_t0" not in j or d <= n:
+        return (now - j["s0"]) / max(d, 1) * (t - d)
+    blocks_total, blocks_done = t - 2 * n, d - n
+    if blocks_done >= blocks_total:                 # the decodes are under way (no time left is shown there)
+        return 0.0
+    rate = (now - j["blk_t0"]) / blocks_done
+    dec = j.get("dec_s", DECODE_PER_ENCODE * j["enc_s"])
+    return (blocks_total - blocks_done) * rate + n * dec
 
 
 def _stage_row(name):
@@ -1371,7 +1420,7 @@ def apply_theme(root):
                      upperbordercolor=LINE, lowerbordercolor=LINE)
         st.map(w, background=[("active", BG)], indicatorbackground=[("selected", SURFACE), ("active", BG_ALT)],
                foreground=[("disabled", TEXT_FAINT)])
-    # tabs (user 2026-10-31: the selected tab must come FORWARD, outlined in gold together with its page): the
+    # tabs (the selected tab comes FORWARD, outlined in gold together with its page): the
     # unselected tabs sit back (darker than the window, faint text, grey edge); the selected tab = the page's own colour,
     # grows 3 px, gold text, and the page + the selected tab are framed in gold
     st.configure("TNotebook", background=BG, bordercolor=ACCENT, lightcolor=BG, darkcolor=BG, tabmargins=(2, 4, 2, 0))
@@ -1427,6 +1476,16 @@ def dark_title_bar(root):
         pass
 
 
+def _say_ready():
+    """One stderr line once the main window is built and Tk is idle: the Mac smoke check tells the window from a
+    window that failed (pythonw on Windows has no stderr: nothing is printed there)."""
+    if sys.stderr is not None:
+        print(WINDOW_READY, file=sys.stderr, flush=True)
+
+
+WINDOW_READY = "[gui] window ready"
+
+
 def main(argv=None):
     try:                       # sharp type on a scaled display (Windows would otherwise stretch a blurry bitmap)
         ctypes.windll.shcore.SetProcessDpiAwareness(1)
@@ -1446,6 +1505,9 @@ def main(argv=None):
     except tk.TclError:
         pass
     dark_title_bar(root)
-    App(root, list(argv or []))
+    app = App(root, list(argv or []))
+    if platform_io.IS_MAC:     # photos dropped on the Dock / Finder icon (the Mac form of "drop on the .bat")
+        root.createcommand("::tk::mac::OpenDocument", lambda *paths: app.add(app.tab_depth, list(paths)))
+    root.after_idle(_say_ready)
     root.mainloop()
     return 0

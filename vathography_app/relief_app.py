@@ -23,7 +23,7 @@ import os
 import numpy as np
 import torch
 
-from . import outnames, photo_io
+from . import device, outnames, photo_io
 from .engine import relief as RL
 from .engine import relief_colour as RC
 
@@ -45,11 +45,11 @@ def source_for(path):
 
 
 def relief_colour_split(rgb, sigma_r, source, colour_device, llf_device, tick=None, stage=None):
-    """= engine relief_colour (1.3.0, relief_colour.py:178-204) with the reshape on `llf_device`; identical when the
-    two devices are the same."""
+    """= the node's relief_colour (1.3.0) with the reshape on `llf_device`; identical when the two devices are the
+    same."""
     if source == RL.SOURCES[2]:
-        raise ValueError("'Raw depth map' takes a grey depth map; for a colour export set 'input' to the export's "
-                         "format (PNG or EXR)")
+        raise ValueError("This file is marked as a depth map made by this app but is in colour; the Relief tab takes "
+                         "this app's grey depth maps, or the add-on's PNG or EXR export.")
     H, W, _ = rgb.shape
     x = torch.from_numpy(np.ascontiguousarray(rgb)).to(device=colour_device, dtype=torch.float64).reshape(-1, 3)
     lin = x if source == RL.SOURCES[0] else torch.from_numpy(RL.eotf_srgb_ext(rgb).reshape(-1, 3)).to(x)
@@ -62,7 +62,7 @@ def relief_colour_split(rgb, sigma_r, source, colour_device, llf_device, tick=No
     off_share = float((dist > RC.OFF_DIST).double().mean())
     info = dict(path="curve", off_share=off_share, curve_len=float((poly[1:] - poly[:-1]).norm(dim=1).sum()))
     if off_share > RC.OFF_SHARE_MAX:
-        info["path"] = "brightness"                                     # = RC._relief_brightness, reshape on llf_device
+        info["path"] = "brightness"                                     # = the node's brightness fallback, reshape on llf_device
         Y = (lin @ RC._LUMA.to(lin)).clamp(min=0)
         disp = RL.oetf_srgb_ext(Y.reshape(H, W).cpu().numpy())
         r, rinfo = RL.reshape(disp, sigma_r, device=llf_device, tick=tick)
@@ -98,9 +98,14 @@ def file_is_grey(path):
 
 
 def devices_for(H, W, colour, budget_gib, gpu):
-    """-> (colour_device, llf_device) under the budget; gpu = None means no CUDA."""
+    """-> (colour_device, llf_device) under the budget; gpu = None means no GPU. The colour maths are float64, which
+    Metal (mps) does not have: on a Mac they always run on the CPU, the Local Laplacian (float32) on the GPU."""
     if gpu is None:
         return "cpu", "cpu"
+    if gpu == "mps":
+        if not colour:
+            return None, (gpu if H * W * WORK_BYTES_PER_PX <= budget_gib * 2 ** 30 else "cpu")
+        return "cpu", (gpu if H * W * WORK_BYTES_PER_PX <= budget_gib * 2 ** 30 else "cpu")
     budget = budget_gib * 2 ** 30
     if not colour:
         return None, (gpu if H * W * WORK_BYTES_PER_PX <= budget else "cpu")
@@ -139,7 +144,7 @@ def run(path, level, budget_gib=6.5, out_dir=None, log=print, stage=None):
     grey = file_is_grey(path)
     if grey is None:
         grey = float(max(np.abs(img[..., 0] - img[..., 1]).max(), np.abs(img[..., 0] - img[..., 2]).max())) <= GREY_TOL
-    gpu = "cuda" if torch.cuda.is_available() else None
+    gpu = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else None
     cdev, ldev = devices_for(H, W, not grey, budget_gib, gpu)
     log(f"[relief] {os.path.basename(path)}: {W}x{H} | input '{source}' | strength {level} | "
         f"{'grey' if grey else 'colour'} (from the file) | devices {cdev or '-'} / {ldev}")
@@ -148,7 +153,7 @@ def run(path, level, budget_gib=6.5, out_dir=None, log=print, stage=None):
     d = out_dir or os.path.dirname(os.path.abspath(path))
     os.makedirs(d, exist_ok=True)           # a new --out folder (as the depth command does)
     # never over an existing file: <stem>_relief_strength<N>_vNNN<ext>; the earlier unversioned names (and the
-    # pre-2026-10-31 `_relief_level<N>`) count as version 0
+    # earlier `_relief_level<N>`) count as version 0
     kind = ext.lower().lstrip(".")
     if stage:
         stage("writing")
@@ -156,5 +161,5 @@ def run(path, level, budget_gib=6.5, out_dir=None, log=print, stage=None):
                                    [(kind, photo_io.encode_depth(out, kind, tagged=(source == RL.SOURCES[2])))],
                                    aliases=(f"{stem}_relief_level{int(level)}",))[0]
     if gpu:
-        torch.cuda.empty_cache()
+        device.empty_cache(gpu)
     return dst, info

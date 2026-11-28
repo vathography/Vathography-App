@@ -1,5 +1,11 @@
 # Vathography App. Copyright (C) 2026 Karim Joseph Nassar (Vathography).
 # Licensed under AGPL-3.0-only with additional permissions under its section 7: see LICENSE.
+# _area_up_weights transliterates three lines of OpenCV 4.13.0 (modules/imgproc/src/resize.cpp), under the BSD 3-Clause
+# licence of that file (see NOTICE.txt):
+#   Copyright (C) 2000-2008, 2017, Intel Corporation, all rights reserved.
+#   Copyright (C) 2009, Willow Garage Inc., all rights reserved.
+#   Copyright (C) 2014-2015, Itseez Inc., all rights reserved.
+#   Third party copyrights are property of their respective owners.
 import math
 
 import numpy as np
@@ -52,7 +58,13 @@ def resize_area_u8(img, w, h):
     out = np.empty((h, w, img.shape[2]), np.uint8)
     for c in range(img.shape[2]):                          # per channel, float32: ~0.1 GB for a 33 MP photo
         ch = img[:, :, c].astype(np.float32)
-        r = Wy @ ch @ Wx.T
+        # macOS: numpy's Apple Accelerate matmul raises spurious divide / overflow / invalid flags here while every
+        # value comes out finite. Silence the flags, check the values themselves.
+        with np.errstate(divide="ignore", over="ignore", invalid="ignore"):
+            r = Wy @ ch @ Wx.T
+        if not np.isfinite(r).all():
+            raise FloatingPointError(f"area resize {W}x{H} -> {w}x{h}: {int((~np.isfinite(r)).sum())} non-finite "
+                                     f"value(s) in channel {c}")
         out[:, :, c] = np.clip(np.rint(r), 0, 255).astype(np.uint8)
     return out
 
@@ -75,7 +87,7 @@ def fit_decoy(obj, alpha, max_h):
 # ----------------------------------------------------------------------------- dilate (binary mask)
 def dilate_square(mask, radius):
     """= cv2.dilate(mask, np.ones((2r+1, 2r+1))) on a 0/1 mask (OpenCV's dilate border never wins)."""
-    from scipy.ndimage import maximum_filter                 # scipy ships with ComfyUI core
+    from scipy.ndimage import maximum_filter
     return maximum_filter(mask, size=2 * radius + 1, mode="constant", cval=0)
 
 

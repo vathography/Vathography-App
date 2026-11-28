@@ -1,11 +1,13 @@
-<img width="1280" height="640" alt="vathography_App_Github_KarimJosephNassar" src="https://github.com/user-attachments/assets/be8f1877-a04c-4f4d-a5bb-776afd850262" />
+<img width="1280" height="640" alt="Vathography App" src="https://github.com/user-attachments/assets/be8f1877-a04c-4f4d-a5bb-776afd850262" />
 
 # Vathography App
 
 High-resolution depth maps estimated from high-resolution photographs, in a standalone app. An easy-to-use alternative to the Vathography ComfyUI nodes, for artists who do not use ComfyUI. The app is free. 
-Windows app for NVIDIA graphics cards (RTX 30-series or newer).
+Windows app for NVIDIA graphics cards (RTX 30-series or newer); Mac app for Apple silicon (M1 or later, macOS 14 or newer), tested on a Mac with 24 GB of memory; smaller Macs are untested.
 
-This repository holds the complete source code of Vathography App, including the scripts that build the download. Each release has a tag: `app-0.1.8` is the source of version 0.1.8.
+By Karim Joseph Nassar, developed with Claude Code.
+
+This repository holds the complete source code of Vathography App, including the scripts that build the download. Each release has a tag: `app-0.1.8` is the source of the Windows version 0.1.8, `app-0.2.0` the source of the Mac version 0.2.0.
 
 ## What is here
 
@@ -14,6 +16,8 @@ This repository holds the complete source code of Vathography App, including the
 - `packaging/build_av_lgpl.py` - builds the PyAV package the download uses, on a minimal FFmpeg under the LGPL (no GPL code).
 - `packaging/asset_originals/` - the original of the image the app ships in processed form, and the script that processes it.
 - `packaging/README.txt`, `packaging/NOTICE.txt`, `packaging/licences/` - the texts that ship inside the download.
+- `packaging/build_package_mac.py`, `packaging/build_av_lgpl_mac.py`, `packaging/macos/`, `packaging/licences_macos/` - the same for the Mac download; `.github/workflows/build-mac.yml` builds it on GitHub's macOS runners and `packaging/smoke_mac.py` checks the built zip there.
+- `packaging/rust_crates/`, `packaging/bundled_licences/` - the scripts that collect licence texts for `licences/` and `licences_macos/`; `packaging/hf_models/` - the card and notice of the Hugging Face repository the app downloads its models from; `packaging/make_icon.py` - makes the app icon.
 
 ## Problems
 

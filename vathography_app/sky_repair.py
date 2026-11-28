@@ -26,8 +26,8 @@ import warnings
 
 import cv2
 import numpy as np
-import torch
 
+from . import device
 from .engine import tiled_core as TC
 
 CORR_MAX, RMS_X, GAIN_MIN = 0.8, 3.8, 0.05           # the flag rule
@@ -39,10 +39,16 @@ FLAT, FLAT_W = 0.8, 61
 FR_PRIO, FR_FEATHER = 1.0, 256
 MERGE_R = 128
 BH, BH_T = 21, 0.06                                  # thin dark lines: black-hat size + threshold
-SKY_CC_FRAC = 50000 / (6656 * 9984)                  # a "large" sky component, as a share of the canvas
+SKY_CC_FRAC = 50000 / (6656 * 9984)                  # a "large" sky component: 50 000 px of a 66 MP canvas, as a share
+                                                     # of the canvas so the threshold scales with the photo
 SCOPE_RAMP = 256
 SCALED_SIDE = 2775                                   # scaled frame: a square of this side, brought down to one tile
 LIMIT_SHARE = 0.4                                    # full frames on at most this share of a photo's tiles, worst first
+
+
+def frame_limit(n_tiles):
+    """At most this many full frames on one photo: K frames per tile on LIMIT_SHARE of its tiles."""
+    return K * math.ceil(LIMIT_SHARE * n_tiles)
 
 
 def _grad(a, s):
@@ -211,27 +217,23 @@ def _run_scaled(flagged, bgr, G, lum, plan, infer, chunk, stage, log, base, tota
     return out
 
 
-def repair(S, G, plan, tp, rows, bgr, infer, merge_device="cpu", stage=None, log=print, chunk=None, limit=None, scaled=True, _flags=None):
+def repair(S, G, plan, tp, rows, bgr, infer, merge_device="cpu", stage=None, log=print, chunk=None):
     """Returns None (nothing flagged) or (final float32 map, report dict). `chunk` = frames per model run (one weight
-    pass); `limit` = at most this many full frames, worst tiles first, one tile's frames at the least; the others are
-    named in the log. `scaled` = the low-priority scaled frame on every flagged tile: a
-    full-resolution frame wins where it covers, the scaled frame fills what it leaves, the grid tile only what is left
-    after that. `_flags` = tile names to use in place of the rule (a gate's forced flags)."""
+    pass). Full frames on at most frame_limit() tiles, worst first, one tile's frames at the least; the others are
+    named in the log. Every flagged tile also gets the low-priority scaled frame (photos at least SCALED_SIDE on their
+    short side): a full-resolution frame wins where it covers, the scaled frame fills what it leaves, the grid tile
+    only what is left after that."""
     stage = stage or (lambda *a, **k: None)
     t_all = time.time()
     H, W = S.shape; tile = plan["tile"]; T = plan["tiles"]
     assert bgr.shape[:2] == (H, W), (bgr.shape, (H, W))
-    if _flags is None:
-        scored = flag_tiles(G, plan, tp, rows, log)
-    else:
-        scored = [(t, 0.0) for t in T if t["name"] in set(_flags)]
+    scored = flag_tiles(G, plan, tp, rows, log)
     if not scored:
         log("[sky_repair] no tile flagged -> the map is kept unchanged")
         return None
     past = []
     every = [s[0] for s in scored]                   # the scaled frames go to every flagged tile, past the limit too
-    if limit is None:
-        limit = K * math.ceil(LIMIT_SHARE * len(T))
+    limit = frame_limit(len(T))
     if K * len(scored) > limit:
         keep = max(int(limit) // K, 1)
         worst = sorted(scored, key=lambda s: (s[1] != s[1], s[1]))       # lowest correlation first, NaN last
@@ -243,15 +245,15 @@ def repair(S, G, plan, tp, rows, bgr, infer, merge_device="cpu", stage=None, log
     lum = bgr.astype(np.float32).mean(2) / 255
     log(f"[sky_repair] {len(every)} tile(s) flagged, canvas {W}x{H}, tile {tile}, map range {S.min():.4f}..{S.max():.4f}")
 
-    torch.cuda.empty_cache()                         # the first pass ran in this process
+    device.empty_cache()                         # the first pass ran in this process
     cands = _candidates(G, lum, plan, flagged, log)
-    scaled = scaled and min(H, W) >= SCALED_SIDE
+    scaled = min(H, W) >= SCALED_SIDE
     if not scaled:
-        log(f"[sky_repair] no scaled frames: off, or the photo's short side is under {SCALED_SIDE} px")
+        log(f"[sky_repair] no scaled frames: the photo's short side is under {SCALED_SIDE} px")
     total = len(cands) + (len(every) if scaled else 0)
     chosen = _run_frames(cands, bgr, G, lum, plan, infer, chunk, stage, log, total) if cands else {}
     soft = _run_scaled(every, bgr, G, lum, plan, infer, chunk, stage, log, len(cands), total) if scaled else {}
-    torch.cuda.empty_cache()
+    device.empty_cache()
     for t in every:
         c = chosen.get(t["name"])
         pick = f"frame ({c['x0']},{c['y0']}), {c['why']}" if c else "scaled frame only" if t["name"] in soft else "none qualifies, its grid tile stays"
@@ -332,10 +334,10 @@ def repair(S, G, plan, tp, rows, bgr, infer, merge_device="cpu", stage=None, log
     Gf = np.clip(G, float(S.min()), float(S.max()))
     Tm = ((num + np.clip(1 - den, 0, 1) * Gf) / np.maximum(den, 1.0)).astype(np.float32)
     del num, den, records, FCOV, COV
-    torch.cuda.empty_cache()
+    device.empty_cache()
     F = TC.laplacian_merge(G, Tm, MERGE_R, merge_device)[0].astype(np.float32)
     del Tm
-    torch.cuda.empty_cache()
+    device.empty_cache()
     log(f"[sky_repair] laplacian merge r{MERGE_R}: range {F.min():.4f}..{F.max():.4f}")
 
     # ---- thin dark lines near a large sky

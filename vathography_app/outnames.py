@@ -6,6 +6,8 @@ is never replaced. Standard library only: the window imports it too (no PyAV / t
 import os
 import re
 
+from .platform_io import safe_rename
+
 # Every output gets the next free 3-digit version: <base>_v001.<ext>, _v002, ... An existing file is never replaced.
 VERSION_RE = r"_v(\d{3,})"
 
@@ -42,7 +44,7 @@ def latest_outputs(folder, base, aliases=()):
 
 def write_versioned(folder, base, files, aliases=()):
     """files: [(ext, bytes), ...] written as ONE version: <base>_vNNN.<ext> for every ext, N = 1 + the highest version
-    present (aliases count too). Each file: <name>.tmp, then os.rename (no replace); a name taken meanwhile => the
+    present (aliases count too). Each file: <name>.tmp, then safe_rename (never a replace, on every OS); a name taken meanwhile => the
     renamed ones go back to .tmp and the whole set retries at N+1. Returns the written paths."""
     os.makedirs(folder, exist_ok=True)
     n = highest_version(folder, base, aliases) + 1
@@ -59,7 +61,7 @@ def write_versioned(folder, base, files, aliases=()):
             try:
                 for ext, tmp in tmps:
                     dst = os.path.join(folder, f"{base}_v{n:03d}.{ext}")
-                    os.rename(tmp, dst)
+                    safe_rename(tmp, dst)
                     done.append((tmp, dst))
                 return [dst for _, dst in done]
             except FileExistsError:

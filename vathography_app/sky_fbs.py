@@ -6,7 +6,7 @@ r"""sky_fbs.py — Fast Bilateral Solver (Barron & Poole, ECCV 2016), numpy + sc
 A modified version of the authors' reference implementation, github.com/poolio/bilateral_solver (MIT, Ben Poole 2016;
 the licence text is in NOTICE.txt). Changes from it: canvas-absolute spatial coordinates, a mixed-radix coordinate hash
 (the reference's fixed radix collides on large canvases), guards against division by zero, scipy's `rtol` keyword, a
-float32 output, and a spatial bilinear splat + slice (`interp="bilinear"`) that removes the square pattern of the
+float32 output, and a spatial bilinear splat + slice that removes the square pattern of the reference's
 nearest-vertex slice.
 Guide = uint8 RGB [H,W,3]; target and confidence = float32 [H,W]; output float32 [H,W].
 """
@@ -34,13 +34,9 @@ def rgb2yuv(im):
 class BilateralGrid:
     """Hashed bilateral grid over (x/σs, y/σs, Y/σl, U/σc, V/σc)."""
 
-    def __init__(self, im_rgb_u8, sigma_spatial=8.0, sigma_luma=8.0, sigma_chroma=8.0, origin=(0, 0),
-                 interp="nearest"):
+    def __init__(self, im_rgb_u8, sigma_spatial=8.0, sigma_luma=8.0, sigma_chroma=8.0, origin=(0, 0)):
         if im_rgb_u8.ndim != 3 or im_rgb_u8.shape[2] < 3:
             raise ValueError("guide must be [H,W,3] uint8 RGB")
-        if interp not in ("nearest", "bilinear"):
-            raise ValueError(f"interp must be 'nearest' or 'bilinear', got {interp!r}")
-        self.interp = interp
         im_yuv = rgb2yuv(im_rgb_u8[..., :3])
         h, w = im_rgb_u8.shape[:2]
         ox, oy = int(origin[0]), int(origin[1])
@@ -56,22 +52,15 @@ class BilateralGrid:
         self.dim = coords_flat.shape[1]
         self.npixels = coords_flat.shape[0]
         self.shape = (h, w)
-        if interp == "nearest":
-            self.mins = coords_flat.min(0) - 1
-            spans = coords_flat.max(0) - self.mins + 2
-            self.strides = np.cumprod(np.concatenate([[1], spans[:-1]])).astype(np.int64)
-            self.spans = spans
-            self._compute_factorization(coords_flat)
-        else:
-            # bilinear candidates can reach one cell below/above the nearest cell -> widen the hash range
-            self.mins = coords_flat.min(0) - 2
-            spans = coords_flat.max(0) - self.mins + 3
-            self.strides = np.cumprod(np.concatenate([[1], spans[:-1]])).astype(np.int64)
-            self.spans = spans
-            fxf = fx.reshape(-1)
-            fyf = fy.reshape(-1)
-            del Ix, Iy, fx, fy, coords, im_yuv, x_coords, y_coords, l_coords, c_coords  # memory: free before the 4N build
-            self._compute_factorization_bilinear(coords_flat, fxf, fyf)
+        # bilinear candidates can reach one cell below/above the nearest cell -> widen the hash range
+        self.mins = coords_flat.min(0) - 2
+        spans = coords_flat.max(0) - self.mins + 3
+        self.strides = np.cumprod(np.concatenate([[1], spans[:-1]])).astype(np.int64)
+        self.spans = spans
+        fxf = fx.reshape(-1)
+        fyf = fy.reshape(-1)
+        del Ix, Iy, fx, fy, coords, im_yuv, x_coords, y_coords, l_coords, c_coords  # memory: free before the 4N build
+        self._compute_factorization_bilinear(coords_flat, fxf, fyf)
 
     def _hash(self, coords):
         return ((coords - self.mins) * self.strides).sum(1)
@@ -102,7 +91,7 @@ class BilateralGrid:
         self.B = blur.tocsr()
 
     def _compute_factorization_bilinear(self, coords_flat, fx, fy):
-        """Deviation 8: centre-based spatial bilinear splat. bx = floor(fx - 0.5), tx = fx - 0.5 - bx;
+        """Change from the reference: centre-based spatial bilinear splat. bx = floor(fx - 0.5), tx = fx - 0.5 - bx;
         the 4 candidate cells (bx+{0,1}, by+{0,1}) carry the pixel's OWN colour bin."""
         n = self.npixels
         bx = np.floor(fx - 0.5).astype(np.int64)
@@ -136,27 +125,6 @@ class BilateralGrid:
         self.S = csr_matrix((w_all, (inv, pix_all)), shape=(self.nvertices, n))
         unique_coords = self._unhash(unique_hashes)
         self._build_blur(unique_hashes, unique_coords)
-
-    def _compute_factorization(self, coords_flat):
-        hashed = self._hash(coords_flat)
-        unique_hashes, unique_idx, idx = np.unique(hashed, return_index=True, return_inverse=True)
-        self.nvertices = len(unique_hashes)
-        self.S = csr_matrix((np.ones(self.npixels), (idx, np.arange(self.npixels))),
-                            shape=(self.nvertices, self.npixels))
-        unique_coords = coords_flat[unique_idx]
-        blur = 2.0 * self.dim * identity(self.nvertices, format="csr")
-        for d in range(self.dim):
-            for offset in (-1, 1):
-                nb = unique_coords.copy()
-                nb[:, d] += offset
-                nb_hash = self._hash(nb)
-                pos = np.searchsorted(unique_hashes, nb_hash)
-                pos[pos >= self.nvertices] = 0
-                valid = unique_hashes[pos] == nb_hash
-                rows = np.nonzero(valid)[0]
-                blur = blur + csr_matrix((np.ones(len(rows)), (rows, pos[valid])),
-                                         shape=(self.nvertices, self.nvertices))
-        self.B = blur.tocsr()
 
     def splat(self, x):
         return self.S.dot(x)
@@ -209,13 +177,13 @@ class BilateralSolver:
 
 def fbs_filter(guide_rgb_u8, target, confidence, sigma_spatial=8.0, sigma_luma=8.0, sigma_chroma=8.0,
                lam=64.0, cg_maxiter=DEFAULT_CG_MAXITER, cg_tol=DEFAULT_CG_TOL, origin=(0, 0),
-               correct_m=True, interp="nearest"):
+               correct_m=True):
     """One solve. Returns (out float32 [H,W], info dict)."""
-    grid = BilateralGrid(guide_rgb_u8, sigma_spatial, sigma_luma, sigma_chroma, origin=origin, interp=interp)
+    grid = BilateralGrid(guide_rgb_u8, sigma_spatial, sigma_luma, sigma_chroma, origin=origin)
     solver = BilateralSolver(grid, lam=lam, cg_maxiter=cg_maxiter, cg_tol=cg_tol, correct_m=correct_m)
     out, info, residual = solver.solve(target, confidence)
     return out, dict(nvertices=grid.nvertices, npixels=grid.npixels, cg_info=info,
-                     residual=residual, vertex_ratio=grid.nvertices / max(grid.npixels, 1), interp=interp)
+                     residual=residual, vertex_ratio=grid.nvertices / max(grid.npixels, 1))
 
 
 def _starts(n):
@@ -234,8 +202,7 @@ def _ramp(a, b, n):
     return w
 
 
-def fbs_tiled(guide_rgb_u8, target, confidence, wanted, sigma_spatial=8.0, sigma_luma=8.0, sigma_chroma=8.0, lam=64.0,
-              interp="bilinear"):
+def fbs_tiled(guide_rgb_u8, target, confidence, wanted, sigma_spatial=8.0, sigma_luma=8.0, sigma_chroma=8.0, lam=64.0):
     """fbs_filter in tiles of TILE px, each solved with MARGIN px of context on the canvas's own grid, cross-faded over
     OVERLAP px. Only tiles holding a `wanted` pixel are solved; the others keep the target. Returns (out, tiles solved)."""
     h, w = target.shape
@@ -248,7 +215,7 @@ def fbs_tiled(guide_rgb_u8, target, confidence, wanted, sigma_spatial=8.0, sigma
                 continue
             ya, xa, yb, xb = max(0, y0 - MARGIN), max(0, x0 - MARGIN), min(h, y1 + MARGIN), min(w, x1 + MARGIN)
             out = fbs_filter(guide_rgb_u8[ya:yb, xa:xb], target[ya:yb, xa:xb], confidence[ya:yb, xa:xb], sigma_spatial, sigma_luma,
-                             sigma_chroma, lam, origin=(xa, ya), interp=interp)[0]
+                             sigma_chroma, lam, origin=(xa, ya))[0]
             wt = _ramp(y0, y1, h)[:, None] * _ramp(x0, x1, w)[None, :]
             num[y0:y1, x0:x1] += wt * out[y0 - ya:y1 - ya, x0 - xa:x1 - xa]; den[y0:y1, x0:x1] += wt
             n += 1
