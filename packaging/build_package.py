@@ -2,16 +2,16 @@ r"""build_package.py — builds the portable Vathography App zip.
 
   _build\cache\     the python-build-standalone tarball + the wheelhouse (kept: a rebuild downloads nothing)
   _build\Vathography App\   the package folder (rebuilt from scratch every run)
-      runtime\      CPython 3.10.21 python-build-standalone 20260901 (= the dev Python, same sha256) + the wheels
+      runtime\      CPython 3.10.21 python-build-standalone 20260901 (sha256 pinned below) + the wheels
       app\vathography_app\
       models\       empty (the models go beside the app)
       Vathography App.bat      (CRLF)
       LICENSE, NOTICE.txt, README.txt, BUILD_INFO.json
   _build\Vathography_App_<version>.zip
 
-Wheels: requirements.in (the direct imports, pinned) resolved under constraints.txt (the dev env's freeze), so every
-version = the version the gates ran on; BUILD_INFO.json records each wheel's file name + sha256. PyTorch + OpenCV are
-resolved and installed like the rest, then REMOVED (0.1.7 Part T): the first start downloads them from their publishers.
+Wheels: requirements.in (the direct imports, pinned) resolved under constraints.txt (every dependency pinned), so
+each build installs the same versions; BUILD_INFO.json records each wheel's file name + sha256. PyTorch + OpenCV are
+resolved and installed like the rest, then REMOVED: the first start downloads them from their publishers.
 Usage: python packaging\build_package.py [--no-zip]
 """
 import glob
@@ -36,9 +36,10 @@ NAME = "Vathography App"
 STAGE = os.path.join(BUILD, NAME)
 PBS_URL = ("https://github.com/astral-sh/python-build-standalone/releases/download/20260901/"
            "cpython-3.10.21%2B20260901-x86_64-pc-windows-msvc-install_only.tar.gz")
-PBS_SHA = "b3edb1dacad300c7117ce4d6df97cd2e411afc0d173db43c224f904deb6253b5"   # = the dev Python's tarball
+PBS_SHA = "b3edb1dacad300c7117ce4d6df97cd2e411afc0d173db43c224f904deb6253b5"   # the tarball's sha256
 TORCH_INDEX = "https://download.pytorch.org/whl/cu128"
-# the app's own licence: the node's AGPL-3.0-only text + its output permission + a permission for NVIDIA's libraries
+# the app's own licence: AGPL-3.0-only + its additional permissions (output; linking with NVIDIA's, Intel's and
+# OpenSSL's libraries)
 APP_LICENSE = os.path.join(PKG, "LICENSE")
 AV_LGPL_DIR = os.path.join(CACHE, "wheels_lgpl")             # packaging\build_av_lgpl.py writes it
 AV_FFMPEG_VERSION = "FFmpeg version 8.1.1"                    # the minimal LGPL-2.1 build of build_av_lgpl.py
@@ -49,7 +50,7 @@ GPL_LIBS = ("libx264", "libx265", "libxvid", "libpostproc", "postproc-")
 # removed from the runtime: debug symbols, import libraries and C headers (only for compiling extensions)
 STRIP_SUFFIX = (".pdb", ".lib")
 STRIP_DIRS = (os.path.join("Lib", "site-packages", "torch", "include"), "include", "libs")
-# 0.1.7 Part T: PyTorch + OpenCV are NOT in the zip; the first start downloads each official wheel (pinned in the
+# PyTorch + OpenCV are NOT in the zip; the first start downloads each official wheel (pinned in the
 # manifest's `third_party`) into <APP_HOME>\third_party\<folder>, found through ONE .pth in site-packages
 THIRD_PARTY_TOPS = ("torch", "functorch", "torchgen", "cv2")
 THIRD_PARTY_DIST = ("torch-", "opencv_python_headless-")
@@ -63,23 +64,23 @@ BINARY_SUFFIX = (".dll", ".pyd", ".exe", ".so")
 # the package manager + its helpers never run in the app
 PIP_DIRS = ("pip", "setuptools", "_distutils_hack", "pkg_resources")
 PIP_DIST = ("pip-", "setuptools-")
-# 0.1.7: hf_xet is never used (huggingface_hub imports it only inside its own
+# hf_xet is never used (huggingface_hub imports it only inside its own
 # download / upload functions; the app downloads with urllib) and carries ~74 Rust crates incl. AWS-LC: removed
 UNUSED_DIRS = ("hf_xet",)
 UNUSED_DIST = ("hf_xet-",)
-# 0.1.7 rc4 (second reader #4, #6): files the app can never load. Tix (runtime\tcl\tix8.4.3) is not used, and its
+# files the app can never load. Tix (runtime\tcl\tix8.4.3) is not used, and its
 # licence points to documents that do not ship; tkinterdnd2 loads ONLY tkdnd\win-x64 on this 64-bit Windows Python with
 # Tcl 8.6 (TkinterDnD.py:60-72: PROCESSOR_ARCHITECTURE of the process = AMD64, Tcl major < 9)
 UNUSED_RUNTIME_DIRS = (os.path.join("tcl", "tix8.4.3"),)
-# 0.1.7: diffusers files under Creative Commons NON-COMMERCIAL licences, never used
+# diffusers files under Creative Commons NON-COMMERCIAL licences, never used
 # by the app (imported only under TYPE_CHECKING / DIFFUSERS_SLOW_IMPORT); then the build STOPS on any non-commercial
 # header left in a .py of the runtime
 NONCOMMERCIAL_PATHS = (os.path.join("diffusers", "pipelines", "bria_fibo"),
                        os.path.join("diffusers", "models", "transformers", "transformer_bria_fibo.py"),
                        os.path.join("diffusers", "pipelines", "dit", "pipeline_dit.py"))
 NONCOMMERCIAL_RX = re.compile(r"(?i)non-?commercial|CC[- ]BY[- ]NC")
-# 0.1.7: diffusers\models\transformers\__init__.py imports the removed
-# transformer_bria_fibo UNGUARDED, so with PyTorch installed every diffusers model import crashed (rc6 G2 P2). The builder
+# diffusers\models\transformers\__init__.py imports the removed
+# transformer_bria_fibo UNGUARDED, so with PyTorch installed every diffusers model import fails. The builder
 # takes that ONE line out and marks the file as changed (Apache-2.0 4(b)); it stops if the line is not there exactly once
 TRANSFORMERS_INIT = os.path.join("diffusers", "models", "transformers", "__init__.py")
 BRIA_IMPORT_LINE = b"    from .transformer_bria_fibo import BriaFiboTransformer2DModel"
@@ -213,7 +214,7 @@ def main():
                 os.remove(os.path.join(scripts, f))
                 n_exe += 1
     site = os.path.join(runtime, "Lib", "site-packages")
-    # Part T: PyTorch + OpenCV out of the zip (installed here only so pip resolves and freezes the set the gates ran on;
+    # PyTorch + OpenCV out of the zip (installed here only so pip resolves and records the pinned set;
     # their filter at first start = vathography_app\third_party.py). Torch's own dependencies stay.
     n_tp = 0
     for d in os.listdir(site):
@@ -224,7 +225,7 @@ def main():
             n_tp += 1
     if n_tp != len(THIRD_PARTY_TOPS) + len(THIRD_PARTY_DIST):
         raise SystemExit(f"expected torch, functorch, torchgen, cv2 + 2 dist-infos in site-packages, removed {n_tp}")
-    # step 4: pip, setuptools and their helpers; ensurepip's bundled wheels; pip's empty wheel records
+    # then pip, setuptools and their helpers; ensurepip's bundled wheels; pip's empty wheel records
     n_pip = 0
     for d in os.listdir(site):
         p = os.path.join(site, d)
@@ -293,12 +294,12 @@ def main():
     if nc:
         raise SystemExit("non-commercial licence header left in the runtime:\n  " + "\n  ".join(nc[:20]))
     # ONE .pth, two relative lines: site-packages -> ..\..\.. = the package folder; Python skips a missing folder
-    # silently, so the app checks third_party.ready() itself before any work
+    # silently, so the app checks third_party.missing() itself before any work
     man = json.load(open(os.path.join(REPO, "vathography_app", "model_manifest.json"), encoding="utf-8"))
     tp = man["third_party"]
     with open(os.path.join(site, PTH_NAME), "w", encoding="ascii", newline="\r\n") as f:
         f.write("".join(f"..\\..\\..\\third_party\\{e['folder']}\n" for e in tp))
-    # STOP on any leftover: by name, then by content (T7's markers) over every binary of the package folder
+    # STOP on any leftover: by name, then by content (the proprietary markers) over every binary of the package folder
     left = []
     for a, ds, fs in os.walk(runtime):
         for n in ds + fs:
@@ -362,11 +363,11 @@ def main():
     wheels.append(dict(file=os.path.basename(lgpl[0]), sha256=sha(lgpl[0]),
                        built_from="PyAV 17.1.0 sdist + FFmpeg 8.1.1 (tag n8.1.1), LGPL-2.1-or-later, minimal "
                                   "configure (packaging/build_av_lgpl.py)"))
-    # freeze + wheels = the record of what the gates ran on (torch + OpenCV included: they are NOT in this package);
+    # freeze + wheels = the record of the resolved set (torch + OpenCV included: they are NOT in this package);
     # third_party = what the first start downloads
     info = dict(app=NAME, version=__version__, built=time.strftime("%Y-%m-%d %H:%M"),
                 python=dict(source=PBS_URL, sha256=PBS_SHA),
-                note="freeze and wheels record the set the gates ran on. Not in this package: PyTorch and OpenCV "
+                note="freeze and wheels record the resolved set. Not in this package: PyTorch and OpenCV "
                      "(third_party: downloaded from their publishers at first start), pip and setuptools (never used "
                      "by the app), hf-xet (never used by the app)",
                 freeze=freeze, wheels=wheels,

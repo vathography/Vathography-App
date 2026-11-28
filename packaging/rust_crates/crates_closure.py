@@ -22,12 +22,14 @@ pat = re.compile(rb"index\.crates\.io-[0-9a-f]+[/\x5c]([A-Za-z0-9_-]+?)-(\d+\.\d
 def strings(pyd):
     return {(n.decode(), v.decode()) for n, v in pat.findall(open(pyd, "rb").read())}
 rt = sys.argv[1]
+D = os.path.join(os.path.dirname(os.path.abspath(__file__)), "crates")     # the Cargo.lock inputs + closures.json
 out = {}
 for lock, root, pyd in (("kornia-rs-0.2.0.Cargo.lock", "kornia-py", "kornia_rs/kornia_rs.cp310-win_amd64.pyd"),
                         ("safetensors-0.8.0.Cargo.lock", "safetensors-python", "safetensors/_safetensors_rust.pyd")):
-    c = closure(lock, root)
+    c = closure(os.path.join(D, lock), root)
     reg = {k: p for k, p in c.items() if "source" in p}
     s = strings(os.path.join(rt, pyd))
     print(f"{root}: closure {len(c)} (registry {len(reg)}) | crates in the binary {len(s)} | in the binary, not in closure: {sorted(s - set(c))}")
     out[root] = sorted(reg)
-json.dump(out, open("closures.json", "w"), indent=0)
+with open(os.path.join(D, "closures.json"), "w") as fh:
+    json.dump(out, fh, indent=0)

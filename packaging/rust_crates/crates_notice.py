@@ -1,4 +1,9 @@
-"""Builds packaging\\licences\\Rust-crates.txt from harvest.json (Vathography App 0.1.7, step 12 row 105, ruling A).
+"""Builds packaging\\licences\\Rust-crates.txt (Windows) or, with --macos, packaging/licences_macos/Rust-crates.txt
+from harvest.json. Usage: crates_notice.py <output file> [--macos]. The two lists differ only in the paths and the
+platform named.
+Inputs in crates/: closures.json and harvest.json, not published here (crates_closure.py and crates_harvest.py rebuild
+them from the Cargo.lock files), and deep.json (the bundled C / C++ licence texts of turbojpeg-sys and apriltag-sys,
+read by hand from those crates' sources).
 Per crate, the licence choice with the fewest obligations: a no-notice licence (Unlicense, CC0-1.0, 0BSD, MIT-0) >
 Apache-2.0 (its text = licences\\Apache-2.0.txt; the crate's own NOTICE files are added, Apache 2.0 section 4d) >
 the crate's own licence texts. An AND expression needs every part: its extra parts' texts come from the crate's files.
@@ -12,6 +17,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 h = json.load(open(os.path.join(HERE, "crates", "harvest.json"), encoding="utf-8"))
 clos = json.load(open(os.path.join(HERE, "crates", "closures.json"), encoding="utf-8"))
 OUT = sys.argv[1]
+MACOS = "--macos" in sys.argv[2:]
+SP = "runtime/lib/python3.10/site-packages/" if MACOS else "runtime\\Lib\\site-packages\\"
 NO_NOTICE = ("Unlicense", "CC0-1.0", "0BSD", "MIT-0")
 STD_MIT = ("Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated "
            "documentation files (the \"Software\"), to deal in the Software without restriction, including without "
@@ -61,7 +68,7 @@ REPO_FILE = {"alloc-stdlib 0.2.2": {"LICENSE (dropbox/rust-alloc-no-stdlib)":
              # both honoured; the BSD text = nalgebra's original LICENSE (commit 8ecd37ebc8)
              "nalgebra 0.32.6": {"LICENSE before 2020 (dimforge/nalgebra 8ecd37ebc8)":
                                  open(os.path.join(HERE, "crates", "nalgebra-BSD-LICENSE.txt"), encoding="utf-8").read()}}
-# facts only (user's rule 2026-11-09): the declared NCSA part = LLVM's own licence file (Apache-2.0 WITH LLVM-exception
+# facts only: the declared NCSA part = LLVM's own licence file (Apache-2.0 WITH LLVM-exception
 # + the legacy University of Illinois/NCSA licence), no interpretation
 NOTES = {"NCSA": ("The libFuzzer sources bundled in libfuzzer-sys 0.4.13 carry the header 'SPDX-License-Identifier: "
                   "Apache-2.0 WITH LLVM-exception' (libfuzzer/FuzzerCorpus.h at tag 0.4.13). LLVM's licence file "
@@ -109,15 +116,15 @@ for key in sorted(h, key=lambda k: (h[k]["name"].lower(), k)):
 
 roots = {"kornia-py": "kornia_rs 0.2.0 (kornia/kornia-rs, tag v0.2.0, Cargo.lock)",
          "safetensors-python": "safetensors 0.8.0 (PyPI source distribution, bindings/python/Cargo.lock)"}
-lines = ["Rust crates compiled into runtime\\Lib\\site-packages\\kornia_rs and runtime\\Lib\\site-packages\\safetensors",
+lines = [f"Rust crates compiled into {SP}kornia_rs and {SP}safetensors",
          "",
          "These two Python packages are compiled from Rust. Their binaries include the Rust libraries (crates) below, each "
          "under its own licence. The list is the full dependency set of each package as recorded in its Cargo.lock:",
          *[f"- {v}: {len(clos[k])} crates" for k, v in roots.items()],
-         "It may name crates that the Windows build does not compile in (optional or other-platform dependencies).",
+         f"It may name crates that the {'macOS' if MACOS else 'Windows'} build does not compile in (optional or other-platform dependencies).",
          "",
          "Where a crate offers a choice of licences, it is used here under the one named in the last column. Apache-2.0: "
-         "the licence text is licences\\Apache-2.0.txt; NOTICE files of those crates follow below. Crates used "
+         f"the licence text is licences{'/' if MACOS else chr(92)}Apache-2.0.txt; NOTICE files of those crates follow below. Crates used "
          "under Unlicense, CC0-1.0, 0BSD or MIT-0 have no text below. Every other licence text, with its copyright lines, follows below, once per "
          "distinct text, with the crates it belongs to.",
          "",

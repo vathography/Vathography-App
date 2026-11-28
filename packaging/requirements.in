@@ -1,5 +1,5 @@
-# The app's direct imports, pinned to the dev env the gates ran in (2026-10-30).
-# Their own dependencies are pinned by constraints.txt (= the dev env's freeze).
+# The app's direct imports, pinned.
+# Their own dependencies are pinned by constraints.txt.
 torch==2.10.0+cu128
 diffusers==0.38.0
 accelerate==1.13.0

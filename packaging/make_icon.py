@@ -1,6 +1,5 @@
 r"""make_icon.py — writes vathography_app\assets\vathography_app.ico: an original serif "V" drawn from polygons (no
-font: the earlier icon used Palatino Linotype's glyph, whose licence did not clearly
-cover an app icon), text colour #eeebe6 on the window's black (#121110), the colours of gui.py. Roman V: thick left
+font glyph, so no font licence is involved), text colour #eeebe6 on the window's black (#121110), the colours of gui.py. Roman V: thick left
 stroke, thin right stroke, pointed foot, bracketed top serifs. Every size is drawn on its own (no downscale of the
 256 px one) so the 16 / 24 / 32 px taskbar sizes stay sharp. Run once after a design change; the .ico is committed.
 Usage: python packaging\make_icon.py [--preview <png>]

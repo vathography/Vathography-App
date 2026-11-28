@@ -1,5 +1,5 @@
-"""Vathography App 0.1.7 (step 12, second reader on rc4 #2/#13, ruled 2026-11-09 "ship upstream's full lists"):
-builds licences\\SciPy-1.15.3-bundled.txt and licences\\NumPy-2.2.5-bundled.txt from each project's OWN source release
+"""Builds licences\\SciPy-1.15.3-bundled.txt, licences\\NumPy-2.2.5-bundled.txt and licences\\Pillow-12.1.1-vendored.txt
+from each project's OWN source release
 (PyPI sdist, the exact version in the zip): its LICENSES_bundled.txt verbatim, then every licence text it refers to,
 verbatim, each with the path it was read from. A reference to a SOURCE file (.py .h .hpp .c .pyx ...) = that file's
 leading licence header only. SciPy's list carries stale paths: MOVED maps each to where 1.15.3 has it (read by hand,

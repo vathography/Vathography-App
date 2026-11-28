@@ -1,5 +1,7 @@
 Vathography App - depth maps from photographs, without ComfyUI.
 
+By Karim Joseph Nassar, developed with Claude Code.
+
 Start: double-click "Vathography App.bat", or drop photos or a folder on it.
 
 The first start needs two downloads, each started by your click in the window. The models (about 15.5 GB) go into the models folder next to the app; if you already have them (for example in a ComfyUI models folder), choose "I already have them" instead. PyTorch and OpenCV (about 2.9 GB) come from their publishers, pytorch.org and PyPI, and are installed in the third_party folder next to the app; they are not included in this download and are used under their own licences (see NOTICE.txt).
@@ -8,7 +10,7 @@ Depth Estimation tab: drop photos or a folder, choose Base or See-through Depth 
 
 Relief Accentuation tab: drop a depth map or an export from the Vathography Blender add-on, choose a strength from 1 to 6, then Start.
 
-Needs: Windows 10 or 11 (64-bit), an NVIDIA graphics card of the RTX 30-series or newer with NVIDIA driver 570.65 or newer, and about 25 GB of free disk space during the first start. The app's own folder needs about 8.3 GB free while PyTorch and OpenCV are installed, even when the models are on another drive. The app keeps its graphics memory under 6.5 GB and starts with as little as about 5 GB free, which is meant to fit 6 GB cards; it has passed on a real 6 GB card, not yet on an 8 GB one. With less graphics memory the depth map can differ very slightly: measured on one photo with the Base model, by at most 0.01 on its 0 to 1 scale; on a photo the sky repair works on, it can differ more. System memory in use peaks at about 21 GB for a 33 MP photo and about 24 GB for 66 MP; a PC with less needs a large enough Windows page file.
+Needs: Windows 10 or 11 (64-bit), an NVIDIA graphics card of the RTX 30-series or newer with NVIDIA driver 570.65 or newer, and about 25 GB of free disk space during the first start. The app's own folder needs about 8.3 GB free while PyTorch and OpenCV are installed, even when the models are on another drive. The app sizes its work to about 6.5 GB of graphics memory and starts with as little as about 5 GB free, which is meant to fit 6 GB cards; it has passed on a real 6 GB card, not yet on an 8 GB one. With less graphics memory the depth map can differ very slightly: measured on one photo with the Base model, by at most 0.01 on its 0 to 1 scale; on a photo the sky repair works on, it can differ more. System memory in use peaks at about 21 GB for a 33 MP photo and about 24 GB for 66 MP; a PC with less needs a large enough Windows page file.
 
 Sky repair: the depth model can read a fine web of cables over a sky as a ceiling. On photos large enough to be split into tiles, the app checks for this and repairs what it finds, automatically. A repaired photo takes up to about four times longer.
 

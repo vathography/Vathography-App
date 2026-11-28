@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleName</key>
+	<string>Vathography App</string>
+	<key>CFBundleDisplayName</key>
+	<string>Vathography App</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.vathography.app</string>
+	<key>CFBundleExecutable</key>
+	<string>Vathography App</string>
+	<key>CFBundleIconFile</key>
+	<string>vathography_app</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleShortVersionString</key>
+	<string>{version}</string>
+	<key>CFBundleVersion</key>
+	<string>{version}</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>14.0</string>
+	<key>LSArchitecturePriority</key>
+	<array>
+		<string>arm64</string>
+	</array>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Photograph</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>public.image</string>
+				<string>public.folder</string>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>

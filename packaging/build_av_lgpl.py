@@ -12,7 +12,6 @@ GPL-2.0-or-later) and the FFmpeg source to publish is one archive.
   PyAV     the av 17.1.0 sdist from PyPI (sha256 below), built with MSVC (Visual Studio 2022 Build Tools) in an isolated
            env: Cython 3.3.1, setuptools 79.0.1, wheel 0.48.0; the FFmpeg DLLs vendored by delvewheel 1.13.2
 Output: _build\cache\wheels_lgpl\av-17.1.0-cp310-cp310-win_amd64.whl; build_package.py installs it and checks it.
-Reads + writes are byte-identical to ComfyUI's LoadImage / Save Image (checked on 15 test files).
 The FFmpeg source archive + this file's FFMPEG_CONFIGURE are what the release publishes for the LGPL (see NOTICE.txt).
 Usage: python packaging\build_av_lgpl.py      (MSYS2 must be at C:\msys64 with the packages above)
 """

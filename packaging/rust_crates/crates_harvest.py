@@ -1,4 +1,4 @@
-"""Licence harvest for the Rust crates of kornia_rs 0.2.0 + safetensors 0.8.0 (Vathography App 0.1.7, step 12 row 105).
+"""Licence harvest for the Rust crates of kornia_rs 0.2.0 + safetensors 0.8.0.
 Input: closures.json (crate name + version from each Cargo.lock's dependency closure). For each crate: the crates.io API
 licence expression (1 request / s), then the published .crate (static.crates.io), read IN MEMORY: only files whose
 name says licence / notice / copying / copyright / authors are kept as text. Nothing is unpacked to disk or run.
